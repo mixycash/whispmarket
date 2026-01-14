@@ -181,10 +181,10 @@ export default function EncryptedInput() {
     s.length <= 16 ? s : `${s.slice(0, 6)}...${s.slice(-4)}`;
 
   return (
-    <div className="mt-8 space-y-4">
+    <div className="mt-8 space-y-6">
       <div>
-        <label className="block text-sm font-medium mb-2">Amount to Mint</label>
-        <div className="flex space-x-2">
+        <label className="block text-xs font-semibold text-[var(--muted)] uppercase tracking-wider mb-2">Amount to Mint</label>
+        <div className="flex gap-2">
           <input
             type="number"
             placeholder="Enter amount..."
@@ -195,12 +195,12 @@ export default function EncryptedInput() {
               setEncrypted("");
               setError(null);
             }}
-            className="flex-1 p-3 border border-gray-300 rounded-full bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 p-3 border border-[var(--border-subtle)] rounded-xl bg-[var(--background)] text-[var(--foreground)] placeholder-[var(--muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
           />
           <button
             onClick={handleEncrypt}
             disabled={loading || !value || !connected}
-            className="px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className="px-6 py-3 bg-[var(--accent)] text-white rounded-xl hover:bg-[var(--accent-hover)] disabled:bg-[var(--surface-hover)] disabled:text-[var(--muted)] disabled:cursor-not-allowed font-semibold transition-colors"
           >
             {loading ? "..." : "Encrypt"}
           </button>
@@ -209,13 +209,13 @@ export default function EncryptedInput() {
 
       {encrypted && (
         <>
-          <div className="bg-gray-100 p-3 rounded-full border flex items-center justify-between">
-            <span className="text-sm font-mono truncate flex-1">
+          <div className="bg-[var(--background)] p-3 rounded-xl border border-[var(--border-subtle)] flex items-center justify-between">
+            <span className="text-sm font-mono truncate flex-1 text-[var(--accent)]">
               {truncate(encrypted)}
             </span>
             <button
               onClick={() => navigator.clipboard.writeText(encrypted)}
-              className="ml-2 bg-blue-600 text-white px-3 py-1 rounded-full text-xs hover:bg-blue-700"
+              className="ml-2 bg-[var(--surface)] text-[var(--text-secondary)] px-3 py-1 rounded-lg text-xs hover:bg-[var(--surface-hover)] hover:text-white transition-colors border border-[var(--border-subtle)]"
             >
               Copy
             </button>
@@ -223,7 +223,7 @@ export default function EncryptedInput() {
           <button
             onClick={handleMint}
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-full hover:bg-blue-700 disabled:bg-gray-300"
+            className="w-full bg-[var(--accent)] text-white py-3 px-4 rounded-xl hover:bg-[var(--accent-hover)] disabled:bg-[var(--surface-hover)] disabled:text-[var(--muted)] disabled:cursor-not-allowed font-semibold transition-colors"
           >
             {loading ? "Processing..." : "Mint Tokens"}
           </button>
@@ -231,16 +231,16 @@ export default function EncryptedInput() {
       )}
 
       {error && (
-        <p className="text-sm text-red-500 bg-red-50 p-3 rounded-xl">{error}</p>
+        <p className="text-sm text-[var(--danger)] bg-[var(--danger-bg)] border border-[var(--danger)] p-3 rounded-xl">{error}</p>
       )}
       {txHash && (
-        <div className="bg-green-50 p-3 rounded-xl">
-          <p className="text-sm text-green-800">
+        <div className="bg-[var(--success-bg)] border border-[var(--success)] p-3 rounded-xl">
+          <p className="text-sm text-[var(--success)]">
             ✅ Success!{" "}
             <a
-              href={`https://explorer.solana.com/tx/${txHash}?cluster=devnet`}
+              href={`https://orb.helius.dev/tx/${txHash}?cluster=devnet`}
               target="_blank"
-              className="underline"
+              className="underline hover:text-white"
             >
               View tx
             </a>

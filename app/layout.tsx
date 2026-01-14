@@ -10,8 +10,8 @@ const urbanist = Urbanist({
 });
 
 export const metadata: Metadata = {
-  title: "Inco NextJS Template",
-  description: "",
+  title: "WhispMarket | Confidential Prediction Markets",
+  description: "Trade privately on prediction markets with Inco network.",
 };
 
 export default function RootLayout({

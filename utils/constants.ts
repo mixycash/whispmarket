@@ -1,5 +1,5 @@
 import { PublicKey, Connection } from "@solana/web3.js";
-import { Program, AnchorProvider, Idl } from "@coral-xyz/anchor";
+import { Program, AnchorProvider, Idl, BorshCoder } from "@coral-xyz/anchor";
 import { AnchorWallet } from "@solana/wallet-adapter-react";
 import bs58 from "bs58";
 import idl from "./idl.json";
@@ -8,8 +8,18 @@ export const PROGRAM_ID = new PublicKey(idl.address);
 export const INCO_LIGHTNING_PROGRAM_ID = new PublicKey(
   "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
 );
-export const INCO_MINT_DISCRIMINATOR = [254, 129, 245, 169, 202, 143, 198, 4];
-export const INCO_ACCOUNT_DISCRIMINATOR = [18, 233, 131, 18, 230, 173, 249, 89];
+
+// Fetch discriminators dynamically from IDL to ensure consistency
+const findDiscriminator = (name: string) => {
+  const acc = (idl.accounts as any[]).find((a) => a.name === name);
+  return acc ? acc.discriminator : [];
+};
+
+export const INCO_MINT_DISCRIMINATOR = findDiscriminator("IncoMint");
+export const INCO_ACCOUNT_DISCRIMINATOR = findDiscriminator("IncoAccount");
+
+// Coder for decoding account data
+export const coder = new BorshCoder(idl as Idl);
 
 // Derive allowance PDA for a handle and wallet
 export const getAllowancePda = (
@@ -28,8 +38,11 @@ export const getAllowancePda = (
   );
 };
 
-// Extract handle from account data bytes (little-endian u128 at offset 72-88)
+// Extract handle from account data bytes
+// Update: Use BorshCoder for more robust extraction if needed, but keeping optimized slice for now
+// as it avoids full deserialization overhead for just one field.
 export const extractHandle = (data: Buffer): bigint => {
+  // Offset 72 = 8 (discriminator) + 32 (mint) + 32 (owner)
   const bytes = data.slice(72, 88);
   let result = BigInt(0);
   for (let i = 15; i >= 0; i--) {
@@ -71,8 +84,8 @@ export const fetchUserTokenAccount = async (
           bytes: bs58.encode(Buffer.from(INCO_ACCOUNT_DISCRIMINATOR)),
         },
       },
-      { memcmp: { offset: 8, bytes: mint.toBase58() } },
-      { memcmp: { offset: 40, bytes: wallet.toBase58() } },
+      { memcmp: { offset: 8, bytes: mint.toBase58() } }, // Mint offset
+      { memcmp: { offset: 40, bytes: wallet.toBase58() } }, // Owner offset
     ],
   });
   return accounts.length

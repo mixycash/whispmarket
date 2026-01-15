@@ -4,7 +4,7 @@
  */
 
 import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
-import { Program, AnchorProvider, Idl } from "@coral-xyz/anchor";
+import { Program, Idl } from "@coral-xyz/anchor";
 import { AnchorWallet } from "@solana/wallet-adapter-react";
 import { encryptValue } from "@inco/solana-sdk/encryption";
 import { hexToBuffer } from "@inco/solana-sdk/utils";
@@ -14,8 +14,9 @@ import {
     getAllowancePda,
     extractHandle,
     fetchUserTokenAccount,
+    getProgram,
 } from "@/utils/constants";
-import idl from "@/utils/idl.json";
+// Removed direct idl import to use shared constants/types source of truth
 
 export interface TransferParams {
     /** Amount to transfer (will be encrypted) */
@@ -34,15 +35,8 @@ export interface TransferResult {
     error?: string;
 }
 
-/**
- * Get Anchor Program instance for Inco Token
- */
-export const getIncoProgram = (connection: Connection, wallet: AnchorWallet): Program => {
-    const provider = new AnchorProvider(connection, wallet, {
-        commitment: "confirmed",
-    });
-    return new Program(idl as Idl, provider);
-};
+// Re-export getProgram alias if needed for backward compatibility or just use imported one
+const getIncoProgram = getProgram;
 
 /**
  * Encrypt an amount for confidential transfer

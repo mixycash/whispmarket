@@ -195,8 +195,30 @@ export async function fetchEvents(params: FetchEventsParams = {}): Promise<Event
 
     const response: EventsResponse = await res.json();
 
-    // Cache all fetched events
+    // Cache all fetched events, respecting local knowledge of settlement
     for (const event of response.data) {
+        if (event.markets) {
+            for (let i = 0; i < event.markets.length; i++) {
+                const market = event.markets[i];
+                const cached = memoryCache.markets.get(market.marketId);
+
+                // If we know locally that the market is closed/settled (e.g. from portfolio check),
+                // or if the closeTime has passed, override API status
+                const now = Date.now();
+                let closeTime = market.closeTime || market.metadata?.closeTime;
+                if (closeTime && closeTime < 1000000000000) closeTime *= 1000; // Convert seconds to ms
+                const isExpired = closeTime ? closeTime < now : false;
+
+                if ((cached && cached.status === "closed" && market.status === "open") || (market.status === "open" && isExpired)) {
+                    console.log(`[Sync] Overriding stale/expired API status for market ${market.marketId}: open -> closed`);
+                    event.markets[i] = {
+                        ...market,
+                        status: "closed",
+                        result: cached?.result || market.result
+                    };
+                }
+            }
+        }
         cacheEvent(event);
     }
     memoryCache.lastUpdated = Date.now();
@@ -237,9 +259,23 @@ export function searchEvents(query: string): PredictEvent[] {
     if (!query.trim()) return [];
     const q = query.toLowerCase();
     return Array.from(memoryCache.events.values()).filter(event =>
-        event.metadata?.title?.toLowerCase().includes(q) ||
-        event.metadata?.subtitle?.toLowerCase().includes(q) ||
-        event.category?.toLowerCase().includes(q)
+        (event.metadata?.title?.toLowerCase().includes(q) ||
+            event.metadata?.subtitle?.toLowerCase().includes(q) ||
+            event.category?.toLowerCase().includes(q)) &&
+        // Ensure strictly active markets only (matches home page filter)
+        event.isActive &&
+        event.markets?.some(m => {
+            if (m.status !== "open") return false;
+
+            // Check close time to prevent stale cache showing settled markets
+            const now = Date.now();
+            let closeTime = m.closeTime || m.metadata?.closeTime;
+            if (closeTime) {
+                if (closeTime < 1000000000000) closeTime *= 1000; // Convert seconds to ms
+                if (closeTime < now) return false;
+            }
+            return true;
+        })
     );
 }
 

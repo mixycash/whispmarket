@@ -135,6 +135,13 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
           Wallet
         </Link>
 
+        <Link
+          href="/portfolio"
+          className="text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+        >
+          Portfolio
+        </Link>
+
         {/* Search Bar */}
         <div ref={searchRef} className="search-container">
           <input

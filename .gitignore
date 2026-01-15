@@ -33,6 +33,10 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# keypair files (NEVER commit)
+*-keypair.json
+*.keypair.json
+
 # vercel
 .vercel
 

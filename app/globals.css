@@ -815,3 +815,954 @@ body {
   color: var(--muted);
   font-size: 0.9375rem;
 }
+
+/* ============================
+   Betting UI
+   ============================ */
+
+.bet-input-section {
+  margin-bottom: 1rem;
+}
+
+.bet-input-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.03em;
+}
+
+.bet-input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 1rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.bet-input::placeholder {
+  color: var(--muted);
+}
+
+.bet-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(44, 156, 219, 0.15);
+}
+
+.bet-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.potential-payout {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(67, 199, 115, 0.1);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  color: var(--success);
+}
+
+.potential-payout strong {
+  font-weight: 700;
+}
+
+/* Pool info */
+.modal-pool-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: var(--background);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.modal-pool-info span {
+  color: var(--text-secondary);
+}
+
+.pool-split {
+  font-size: 0.75rem;
+  color: var(--muted) !important;
+}
+
+/* Existing bet notice */
+.existing-bet-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: rgba(44, 156, 219, 0.15);
+  border: 1px solid rgba(44, 156, 219, 0.3);
+  border-radius: 10px;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+.bet-badge {
+  padding: 0.25rem 0.625rem;
+  background: var(--accent);
+  color: white;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.bet-badge.yes {
+  background: var(--success);
+}
+
+.bet-badge.no {
+  background: var(--danger);
+}
+
+/* Bet result message */
+.bet-result {
+  margin-bottom: 1rem;
+  padding: 0.875rem 1rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.bet-result.success {
+  background: var(--success-bg);
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+
+.bet-result.error {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+/* Mint link in modal */
+.mint-link {
+  color: var(--accent);
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.mint-link:hover {
+  color: var(--accent-hover);
+}
+
+/* ============================
+   New Betting Flow UI
+   ============================ */
+
+.bet-flow {
+  margin-bottom: 1rem;
+}
+
+.outcome-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.outcome-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 1rem;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.outcome-btn:hover:not(:disabled) {
+  border-color: var(--border-subtle);
+  transform: translateY(-2px);
+}
+
+.outcome-btn.yes:hover:not(:disabled),
+.outcome-btn.yes.selected {
+  border-color: var(--success);
+  background: var(--success-bg);
+}
+
+.outcome-btn.no:hover:not(:disabled),
+.outcome-btn.no.selected {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.outcome-btn.selected {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.outcome-btn .outcome-label {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.outcome-btn.yes .outcome-label {
+  color: var(--success);
+}
+
+.outcome-btn.no .outcome-label {
+  color: var(--danger);
+}
+
+.outcome-btn .outcome-odds {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--foreground);
+}
+
+.outcome-btn .outcome-price {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.outcome-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bet-amount-section {
+  animation: fadeSlideIn 0.3s ease;
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.potential-payout {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  background: var(--background);
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+}
+
+.potential-payout.yes {
+  border-color: var(--success);
+  background: var(--success-bg);
+}
+
+.potential-payout.no {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.payout-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+.payout-row:last-of-type {
+  margin-bottom: 0;
+}
+
+.payout-row span {
+  color: var(--text-secondary);
+}
+
+.payout-row strong {
+  font-weight: 700;
+}
+
+.payout-multiplier {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.btn-place-bet {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-place-bet.yes {
+  background: var(--success);
+  color: white;
+}
+
+.btn-place-bet.yes:hover:not(:disabled) {
+  background: #0ea472;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-place-bet.no {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-place-bet.no:hover:not(:disabled) {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(225, 55, 55, 0.3);
+}
+
+.btn-place-bet:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ============================
+   Shared Page Styles
+   ============================ */
+
+.page-container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding-top: 1.5rem;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--foreground);
+  margin: 0 0 0.25rem 0;
+}
+
+.page-subtitle {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.page-card {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.page-card-header {
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.page-tab {
+  flex: 1;
+  padding: 0.875rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.page-tab:hover {
+  color: var(--foreground);
+  background: var(--surface-hover);
+}
+
+.page-tab.active {
+  color: var(--accent);
+  background: var(--background);
+}
+
+.page-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.page-card-body {
+  padding: 1.5rem;
+}
+
+.page-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0 0 0.375rem 0;
+}
+
+.page-section-desc {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: 0 0 1.25rem 0;
+}
+
+/* ============================
+   Portfolio Page Styles
+   ============================ */
+
+.portfolio-container {
+  padding-top: 1.5rem;
+}
+
+.portfolio-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.portfolio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.portfolio-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+
+.portfolio-card:hover {
+  border-color: var(--border);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.portfolio-card-image {
+  width: 100%;
+  height: 120px;
+  background: var(--background);
+  overflow: hidden;
+}
+
+.portfolio-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.portfolio-card-content {
+  padding: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.portfolio-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.portfolio-card-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.portfolio-card-status {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 4px;
+}
+
+.portfolio-card-status.pending {
+  background: rgba(44, 156, 219, 0.12);
+  color: var(--accent);
+}
+
+.portfolio-card-status.won {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.portfolio-card-status.lost {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.portfolio-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.portfolio-card-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.portfolio-card-outcome {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 4px;
+}
+
+.portfolio-card-outcome.yes {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.portfolio-card-outcome.no {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.portfolio-card-odds {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.portfolio-card-date {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+.empty-state-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.empty-state-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0 0 0.375rem 0;
+}
+
+.empty-state-desc {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: 0 0 1.25rem 0;
+}
+
+.empty-state-btn {
+  display: inline-block;
+  padding: 0.625rem 1.25rem;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.empty-state-btn:hover {
+  background: var(--accent-hover);
+}
+
+/* Info Notice */
+.info-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin-top: 1.25rem;
+  padding: 0.75rem;
+  background: rgba(44, 156, 219, 0.06);
+  border: 1px solid rgba(44, 156, 219, 0.15);
+  border-radius: 8px;
+}
+
+.info-notice-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.info-notice p {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* Refresh Button */
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================
+   Portfolio Page
+   ============================ */
+
+.portfolio-container {
+  padding: 1.5rem 0;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.portfolio-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--foreground);
+  margin: 0;
+}
+
+.page-subtitle {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin: 0.25rem 0 0 0;
+}
+
+/* Portfolio Grid */
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .portfolio-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .portfolio-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Portfolio Card */
+.portfolio-card {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.portfolio-card:hover {
+  border-color: var(--border);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.portfolio-card.claimable {
+  border-color: var(--success);
+  box-shadow: 0 0 16px rgba(67, 199, 115, 0.15);
+}
+
+.portfolio-card-image {
+  width: 100%;
+  height: 100px;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.portfolio-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.portfolio-card-content {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.portfolio-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.portfolio-card-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+  line-height: 1.35;
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Status Badges */
+.portfolio-card-status {
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.portfolio-card-status.pending {
+  background: rgba(44, 156, 219, 0.15);
+  color: var(--accent);
+}
+
+.portfolio-card-status.won {
+  background: var(--success-bg);
+  color: var(--success);
+  animation: pulse-glow 2s infinite;
+}
+
+.portfolio-card-status.lost {
+  background: var(--danger-bg);
+  color: var(--danger);
+  opacity: 0.8;
+}
+
+.portfolio-card-status.claimed {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.75;
+  }
+}
+
+.portfolio-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.portfolio-card-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.portfolio-card-outcome {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.portfolio-card-outcome.yes {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.portfolio-card-outcome.no {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.portfolio-card-odds {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.portfolio-card-date {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Commitment/Proof Indicator */
+.portfolio-card-commitment {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.commitment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  color: #a78bfa;
+  font-weight: 500;
+}
+
+/* Claim Button */
+.claim-btn {
+  width: 100%;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, var(--success) 0%, #0ea472 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.claim-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(67, 199, 115, 0.3);
+}
+
+.claim-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+/* Claim Result */
+.claim-result {
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.claim-result.success {
+  background: var(--success-bg);
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+
+.claim-result.error {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.proof-hash {
+  margin-top: 0.375rem;
+  font-size: 0.6875rem;
+  font-family: monospace;
+  opacity: 0.8;
+}
+
+/* Lost Indicator */
+.lost-indicator {
+  text-align: center;
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Explorer Link */
+.portfolio-card-link {
+  display: block;
+  text-align: center;
+  padding: 0.5rem;
+  margin-top: auto;
+  font-size: 0.75rem;
+  color: var(--accent);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.portfolio-card-link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}

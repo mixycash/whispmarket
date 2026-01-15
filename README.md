@@ -1,36 +1,148 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Whispi 🔒
 
-## Getting Started
+**Open-Source Privacy-First Confidential Betting Layer on Solana**
 
-First, run the development server:
+A lightweight confidential betting application that wraps prediction market data with privacy-preserving token infrastructure. Uses existing Solana programs (Inco) — no new deployments required.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## ✨ Why Whispi?
+
+| Feature | Whispi | Polymarket |
+|---------|-------------|------------|
+| Bet amounts | 🔒 Encrypted | 🔓 Public |
+| Token balances | 🔒 Confidential | 🔓 Public |
+| On-chain verifiable | ✅ Yes | ✅ Yes |
+| Self-custody | ✅ Yes | ✅ Yes |
+
+## 🎯 Core Features
+
+- **Client-Side Encryption** — Bet amounts encrypted with wallet-derived keys (AES-256-GCM)
+- **Confidential Tokens** — Inco FHE-encrypted balances (server never sees amounts)
+- **On-Chain Commitments** — Verifiable bet proofs via transaction memos
+- **Fixed-Odds Bookmaker** — Vault honors quoted odds at bet placement
+- **User-Initiated Claims** — Claim winnings with proof validation
+- **Jupiter Predict Integration** — Real-time markets from Jupiter's API
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        CLIENT SIDE                          │
+├─────────────────────────────────────────────────────────────┤
+│  1. Bet encrypted client-side (AES-256-GCM)                 │
+│  2. Confidential token transfer to PROTOCOL_VAULT           │
+│  3. Commitment hash attached as memo                        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                        SERVER SIDE                          │
+├─────────────────────────────────────────────────────────────┤
+│  • Stores ENCRYPTED bet records (cannot decrypt)            │
+│  • Validates claim proofs                                   │
+│  • Releases fixed-odds payouts from vault                   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     ON-CHAIN (SOLANA)                       │
+├─────────────────────────────────────────────────────────────┤
+│  • Inco confidential token program                          │
+│  • Commitment memos (verifiable by anyone)                  │
+│  • PROTOCOL_VAULT holds liquidity pool                      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🔐 Privacy Model
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### What the Server CAN'T See
+- Actual bet amounts (client-encrypted)
+- Wallet balances (Inco FHE encryption)
+- Decrypted portfolio data
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### What Anyone CAN Verify
+- Commitment memos on-chain
+- Nullifier usage (prevents double-claims)
+- Protocol vault balance
 
-## Learn More
+## 💰 Economic Model
 
-To learn more about Next.js, take a look at the following resources:
+- **Fixed-Odds Bookmaker**: Vault honors the odds quoted at bet placement
+- **Protocol Fee**: 2% on winning payouts
+- **Liquidity Pool**: 1M initial vault liquidity
+- **Daily Faucet Limit**: 500 tokens per wallet per day
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Payout Calculation
+```
+Payout = BetAmount × Odds × (1 - 0.02)
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🚀 Getting Started
 
-## Deploy on Vercel
+### Prerequisites
+- Node.js 18+
+- pnpm
+- Solana wallet (Phantom, Backpack, etc.)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Installation
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+git clone https://github.com/your-org/whispmarket.git
+cd whispmarket
+pnpm install
+cp .env.example .env.local
+pnpm dev
+```
+
+### Environment Variables
+
+VAULT_WALLET=
+TREASURY_WALLET=
+VAULT_SECRET_KEY=
+TREASURY_SECRET_KEY=
+HELIUS_API_KEY=
+NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com
+DATABASE_URL
+
+## 📁 Project Structure
+
+```
+whispi/
+├── app/
+│   ├── api/claim/       # User-initiated claim endpoint
+│   ├── portfolio/       # Bet portfolio view
+│   └── wallet/          # Token faucet & transfers
+├── components/
+│   ├── market-modal.tsx # Betting interface
+│   └── event-grid.tsx   # Market listings
+├── lib/
+│   ├── confidential-betting.ts  # Betting orchestration
+│   ├── confidential-transfer.ts # Inco transfers
+│   ├── crypto.ts                # AES-256-GCM encryption
+│   ├── nullifier-chain.ts       # On-chain nullifier parsing
+│   └── bet-commitment.ts        # Commitment generation
+└── scripts/
+    └── settlement-bot.ts        # 48h backup settlement
+```
+
+## 🔄 Flow
+
+1. **Place Bet** → Encrypt client-side → Transfer to vault → Store commitment
+2. **Market Closes** → Result from Jupiter API
+3. **Claim** → Generate proof → Server validates → Payout at fixed odds
+4. **Backup** → Unclaimed bets auto-settled after 48h
+
+## 🛠️ Development
+
+```bash
+pnpm exec tsc --noEmit          # Type check
+pnpm build                       # Production build
+pnpm exec ts-node scripts/settlement-bot.ts  # Run backup bot
+```
+
+## ⚠️ Disclaimer
+
+Experimental devnet software. Not audited. Use at your own risk.
+
+---
+
+**Built with 🔒 for confidential betting on Solana**

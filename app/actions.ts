@@ -35,6 +35,51 @@ export async function setupDatabase() {
         // Migration: Add mint column if not exists
         await sql`ALTER TABLE bets ADD COLUMN IF NOT EXISTS mint TEXT`;
 
+        // Migration: Add encrypted data columns for privacy
+        await sql`ALTER TABLE bets ADD COLUMN IF NOT EXISTS encrypted_data JSONB`;
+        await sql`ALTER TABLE bets ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT FALSE`;
+
+        // Migration: Add team_name column for multi-outcome market bets
+        await sql`ALTER TABLE bets ADD COLUMN IF NOT EXISTS team_name TEXT`;
+
+        // Migration: Add claim_lock for atomic claim locking
+        await sql`ALTER TABLE bets ADD COLUMN IF NOT EXISTS claim_lock BIGINT`;
+
+        // Create pending_fees table for treasury fee retry queue
+        await sql`
+            CREATE TABLE IF NOT EXISTS pending_fees (
+                bet_tx TEXT PRIMARY KEY,
+                amount DOUBLE PRECISION NOT NULL,
+                mint TEXT NOT NULL,
+                error TEXT,
+                created_at BIGINT NOT NULL,
+                updated_at BIGINT,
+                retry_count INTEGER DEFAULT 0,
+                success_tx TEXT
+            )
+        `;
+
+        // Create used_deposits table to prevent double-minting
+        await sql`
+            CREATE TABLE IF NOT EXISTS used_deposits (
+                tx_signature TEXT PRIMARY KEY,
+                wallet TEXT NOT NULL,
+                amount DOUBLE PRECISION NOT NULL,
+                created_at BIGINT NOT NULL
+            )
+        `;
+
+        // Create used_withdrawals table to prevent double-withdrawal
+        await sql`
+            CREATE TABLE IF NOT EXISTS used_withdrawals (
+                tx_signature TEXT PRIMARY KEY,
+                wallet TEXT NOT NULL,
+                amount DOUBLE PRECISION NOT NULL,
+                created_at BIGINT NOT NULL,
+                wsol_tx TEXT
+            )
+        `;
+
         console.log("Database initialized successfully");
 
     } catch (e) {
@@ -57,7 +102,11 @@ function mapRowToBet(row: any): Bet {
         imageUrl: row.image_url,
         commitment: row.commitment,
         claimed: row.claimed,
-        mint: row.mint
+        mint: row.mint,
+        teamName: row.team_name,  // Team/selection for multi-outcome markets
+        // Privacy fields
+        encryptedData: row.encrypted_data,
+        isEncrypted: row.is_encrypted || false,
     };
 }
 
@@ -97,13 +146,17 @@ export async function saveBet(bet: Bet): Promise<void> {
         await sql`
             INSERT INTO bets (
                 tx, market_id, market_title, outcome, amount, wallet, 
-                timestamp, status, odds, potential_payout, image_url, commitment, claimed, mint
+                timestamp, status, odds, potential_payout, image_url, commitment, claimed, mint,
+                encrypted_data, is_encrypted, team_name
             ) VALUES (
                 ${bet.tx}, ${bet.marketId}, ${bet.marketTitle}, ${bet.outcome}, 
                 ${bet.amount}, ${bet.wallet}, ${bet.timestamp}, ${bet.status || 'pending'}, 
                 ${bet.odds || null}, ${bet.potentialPayout || null}, ${bet.imageUrl || null}, 
                 ${bet.commitment ? JSON.stringify(bet.commitment) : null}, ${bet.claimed || false},
-                ${bet.mint || null}
+                ${bet.mint || null},
+                ${bet.encryptedData ? JSON.stringify(bet.encryptedData) : null},
+                ${bet.isEncrypted || false},
+                ${bet.teamName || null}
             )
             ON CONFLICT (tx) DO UPDATE SET
                 status = EXCLUDED.status,
@@ -179,3 +232,22 @@ export async function clearLostBets(wallet: string): Promise<void> {
     }
 }
 
+export async function deleteBet(tx: string, wallet: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        // Only allow deleting your own bets
+        const rows = await sql`SELECT * FROM bets WHERE tx = ${tx}`;
+        if (rows.length === 0) {
+            return { success: false, error: "Bet not found" };
+        }
+        if (rows[0].wallet !== wallet) {
+            return { success: false, error: "Not your bet" };
+        }
+
+        // Delete the bet
+        await sql`DELETE FROM bets WHERE tx = ${tx} AND wallet = ${wallet}`;
+        return { success: true };
+    } catch (e) {
+        console.error("Error deleting bet:", e);
+        return { success: false, error: "Failed to delete bet" };
+    }
+}

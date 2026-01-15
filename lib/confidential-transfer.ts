@@ -16,6 +16,7 @@ import {
     fetchUserTokenAccount,
     getProgram,
 } from "../utils/constants";
+import { rateLimitedGetAccountInfo } from "./rpc";
 // Removed direct idl import to use shared constants/types source of truth
 
 export interface TransferParams {
@@ -55,7 +56,7 @@ export const getHandleFromAccount = async (
     connection: Connection,
     tokenAccount: PublicKey
 ): Promise<bigint> => {
-    const accountInfo = await connection.getAccountInfo(tokenAccount);
+    const accountInfo = await rateLimitedGetAccountInfo(connection, tokenAccount);
     if (!accountInfo) {
         throw new Error("Token account not found");
     }

@@ -3,6 +3,7 @@ import { Program, AnchorProvider, Idl, BorshCoder } from "@coral-xyz/anchor";
 import { AnchorWallet } from "@solana/wallet-adapter-react";
 import bs58 from "bs58";
 import idl from "./idl.json";
+import { rateLimitedGetProgramAccounts } from "@/lib/rpc";
 
 export const PROGRAM_ID = new PublicKey(idl.address);
 export const INCO_LIGHTNING_PROGRAM_ID = new PublicKey(
@@ -55,8 +56,8 @@ export const fetchUserMint = async (
   connection: Connection,
   wallet: PublicKey
 ): Promise<{ pubkey: PublicKey; data: Buffer } | null> => {
-  const accounts = await connection.getProgramAccounts(PROGRAM_ID, {
-    filters: [
+  try {
+    const accounts = await rateLimitedGetProgramAccounts(connection, PROGRAM_ID, [
       {
         memcmp: {
           offset: 0,
@@ -64,11 +65,14 @@ export const fetchUserMint = async (
         },
       },
       { memcmp: { offset: 9, bytes: wallet.toBase58() } },
-    ],
-  });
-  return accounts.length
-    ? { pubkey: accounts[0].pubkey, data: accounts[0].account.data as Buffer }
-    : null;
+    ]);
+    return accounts.length
+      ? { pubkey: accounts[0].pubkey, data: accounts[0].account.data as Buffer }
+      : null;
+  } catch (error) {
+    console.error("[fetchUserMint] Error:", error);
+    return null;
+  }
 };
 
 export const fetchUserTokenAccount = async (
@@ -76,8 +80,8 @@ export const fetchUserTokenAccount = async (
   wallet: PublicKey,
   mint: PublicKey
 ): Promise<{ pubkey: PublicKey; data: Buffer } | null> => {
-  const accounts = await connection.getProgramAccounts(PROGRAM_ID, {
-    filters: [
+  try {
+    const accounts = await rateLimitedGetProgramAccounts(connection, PROGRAM_ID, [
       {
         memcmp: {
           offset: 0,
@@ -86,11 +90,14 @@ export const fetchUserTokenAccount = async (
       },
       { memcmp: { offset: 8, bytes: mint.toBase58() } }, // Mint offset
       { memcmp: { offset: 40, bytes: wallet.toBase58() } }, // Owner offset
-    ],
-  });
-  return accounts.length
-    ? { pubkey: accounts[0].pubkey, data: accounts[0].account.data as Buffer }
-    : null;
+    ]);
+    return accounts.length
+      ? { pubkey: accounts[0].pubkey, data: accounts[0].account.data as Buffer }
+      : null;
+  } catch (error) {
+    console.error("[fetchUserTokenAccount] Error:", error);
+    return null;
+  }
 };
 
 export const getProgram = (connection: Connection, wallet: AnchorWallet) => {

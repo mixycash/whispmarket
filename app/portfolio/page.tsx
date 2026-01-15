@@ -10,10 +10,14 @@ import {
     refreshBetStatuses,
     claimBet,
     ClaimResult,
-    clearLostBets
+    clearLostBets,
+    checkClaimable, // Use this helper
+    calculateClaimAmount
 } from "@/lib/confidential-betting";
+import { deleteBet } from "@/app/actions";
 import { fetchMarket } from "@/lib/jup-predict";
 import Link from "next/link";
+import { PROTOCOL_FEE } from "@/lib/protocol";
 
 // Convert decimal odds to American format
 const toAmericanOdds = (decimal: number): string => {
@@ -29,7 +33,11 @@ export default function PortfolioPage() {
     const [bets, setBets] = useState<Bet[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [claimingTx, setClaimingTx] = useState<string | null>(null);
+    const [deletingTx, setDeletingTx] = useState<string | null>(null);
     const [claimResult, setClaimResult] = useState<{ tx: string; result: ClaimResult } | null>(null);
+
+    // Track claimable status for pending bets
+    const [claimableStatus, setClaimableStatus] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         const loadBets = async () => {
@@ -39,9 +47,30 @@ export default function PortfolioPage() {
             }
             const userBets = await fetchUserBets(publicKey.toBase58());
             setBets(userBets.sort((a, b) => b.timestamp - a.timestamp));
+
+            // Background check for claimability on pending bets
+            checkPendingClaimability(userBets);
         };
         loadBets();
     }, [publicKey]);
+
+    const checkPendingClaimability = async (currentBets: Bet[]) => {
+        const pending = currentBets.filter(b => b.status === 'pending');
+        const statuses: Record<string, boolean> = {};
+
+        for (const bet of pending) {
+            try {
+                const check = await checkClaimable(bet);
+                if (check.claimable) {
+                    statuses[bet.tx] = true;
+                }
+            } catch (e) {
+                // Ignore errors during background check
+            }
+        }
+
+        setClaimableStatus(prev => ({ ...prev, ...statuses }));
+    };
 
     const handleRefresh = async () => {
         if (!publicKey || refreshing) return;
@@ -49,6 +78,7 @@ export default function PortfolioPage() {
         try {
             const updated = await refreshBetStatuses(publicKey.toBase58());
             setBets(updated.sort((a, b) => b.timestamp - a.timestamp));
+            await checkPendingClaimability(updated);
         } catch (e) {
             console.error("Failed to refresh:", e);
         }
@@ -64,8 +94,26 @@ export default function PortfolioPage() {
         }
     };
 
+    const handleDelete = async (tx: string) => {
+        if (!publicKey || deletingTx) return;
+        if (!confirm("Delete this bet from your history?")) return;
+
+        setDeletingTx(tx);
+        try {
+            const result = await deleteBet(tx, publicKey.toBase58());
+            if (result.success) {
+                setBets(prev => prev.filter(b => b.tx !== tx));
+            } else {
+                console.error("Delete failed:", result.error);
+            }
+        } catch (e) {
+            console.error("Delete error:", e);
+        }
+        setDeletingTx(null);
+    };
+
     const handleClaim = async (bet: Bet) => {
-        if (claimingTx || bet.status !== "won" || bet.claimed) return;
+        if (claimingTx || bet.claimed) return;
 
         setClaimingTx(bet.tx);
         setClaimResult(null);
@@ -90,6 +138,12 @@ export default function PortfolioPage() {
             if (result.success && publicKey) {
                 const updated = await fetchUserBets(publicKey.toBase58());
                 setBets(updated.sort((a, b) => b.timestamp - a.timestamp));
+                // Clear from claimable status if successful
+                setClaimableStatus(prev => {
+                    const next = { ...prev };
+                    delete next[bet.tx];
+                    return next;
+                });
             }
         } catch (e) {
             console.error("Claim failed:", e);
@@ -108,17 +162,18 @@ export default function PortfolioPage() {
             day: "numeric",
         });
 
-    const getStatusClass = (status?: string, claimed?: boolean) => {
-        if (claimed) return "claimed";
-        if (status === "won") return "won";
-        if (status === "lost") return "lost";
+    const getStatusClass = (bet: Bet) => {
+        if (bet.claimed) return "claimed";
+        if (bet.status === "won" || claimableStatus[bet.tx]) return "won";
+        if (bet.status === "lost") return "lost";
         return "pending";
     };
 
-    const getStatusLabel = (status?: string, claimed?: boolean) => {
-        if (claimed) return "Claimed ✓";
-        if (status === "won") return "Won 🎉";
-        if (status === "lost") return "Lost";
+    const getStatusLabel = (bet: Bet) => {
+        if (bet.claimed) return "Claimed ✓";
+        if (bet.status === "won") return "Won 🎉";
+        if (claimableStatus[bet.tx]) return "Ready to Claim! 🎉";
+        if (bet.status === "lost") return "Lost";
         return "Active";
     };
 
@@ -173,63 +228,106 @@ export default function PortfolioPage() {
                     </div>
                 ) : (
                     <div className="portfolio-grid">
-                        {bets.map((bet, i) => (
-                            <div
-                                key={`${bet.tx}-${i}`}
-                                className={`portfolio-card ${bet.status === "won" && !bet.claimed ? "claimable" : ""}`}
-                            >
-                                {bet.imageUrl && (
-                                    <div className="portfolio-card-image">
-                                        <img src={bet.imageUrl} alt="" />
-                                    </div>
-                                )}
-                                <div className="portfolio-card-content">
-                                    <div style={{ marginBottom: '4px', fontWeight: 'bold', fontSize: '1.1rem' }}>
-                                        {bet.marketTitle}
-                                    </div>
-                                    <div className={`portfolio-card-status ${getStatusClass(bet.status, bet.claimed)}`} style={{ display: 'inline-block', marginBottom: '8px' }}>
-                                        {getStatusLabel(bet.status, bet.claimed)}
-                                    </div>
-                                    <div className="portfolio-card-pick" style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span className={`portfolio-card-outcome ${bet.outcome}`} style={{ fontWeight: 'bold' }}>
-                                            {bet.outcome.toUpperCase()}
-                                        </span>
-                                        {bet.odds && (
-                                            <span className="portfolio-card-odds" style={{ color: '#aaa' }}>{toAmericanOdds(bet.odds)}</span>
-                                        )}
-                                    </div>
-                                    <div className="portfolio-card-date" style={{ color: '#888', fontSize: '0.9rem', marginBottom: '8px' }}>
-                                        {formatDate(bet.timestamp)}
-                                    </div>
-                                    {/* Claim button for winners */}
-                                    {bet.status === "won" && !bet.claimed && (
-                                        <button
-                                            className="claim-btn"
-                                            onClick={() => handleClaim(bet)}
-                                            disabled={claimingTx === bet.tx}
-                                            style={{ width: '100%', marginBottom: '8px' }}
-                                        >
-                                            {claimingTx === bet.tx ? (
-                                                <>⏳ Generating ZK Proof...</>
-                                            ) : (
-                                                <>🎫 Claim Winnings</>
-                                            )}
-                                        </button>
-                                    )}
+                        {bets.map((bet, i) => {
+                            // Determine display name for the pick
+                            // For team bets (multi-outcome), show team name
+                            // For binary (YES/NO) bets, show YES or NO
+                            const pickDisplay = bet.teamName || bet.outcome.toUpperCase();
+                            const isTeamBet = !!bet.teamName;
+                            const isClaimable = (bet.status === "won" && !bet.claimed) || claimableStatus[bet.tx];
 
-                                    {/* View on explorer link */}
-                                    <a
-                                        href={`https://solscan.io/tx/${bet.tx}?cluster=devnet`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="portfolio-card-link"
-                                        style={{ fontSize: '0.85rem', color: '#666', textDecoration: 'none' }}
-                                    >
-                                        View on Solscan →
-                                    </a>
+                            return (
+                                <div
+                                    key={`${bet.tx}-${i}`}
+                                    className={`portfolio-card ${isClaimable ? "claimable" : ""}`}
+                                >
+                                    {bet.imageUrl && (
+                                        <div className="portfolio-card-image">
+                                            <img src={bet.imageUrl} alt="" />
+                                        </div>
+                                    )}
+                                    <div className="portfolio-card-content">
+                                        {/* Market Title */}
+                                        <div className="portfolio-card-title">
+                                            {bet.marketTitle}
+                                        </div>
+
+                                        {/* Status Badge */}
+                                        <div className={`portfolio-card-status ${getStatusClass(bet)}`}>
+                                            {getStatusLabel(bet)}
+                                        </div>
+
+                                        {/* Pick Display: Team Name or YES/NO with Odds */}
+                                        <div className="portfolio-card-pick">
+                                            <span className={`portfolio-card-outcome ${isTeamBet ? 'team' : bet.outcome}`}>
+                                                {pickDisplay}
+                                            </span>
+                                            {bet.odds && (
+                                                <span className="portfolio-card-odds">{toAmericanOdds(bet.odds)}</span>
+                                            )}
+                                        </div>
+
+                                        {/* Date */}
+                                        <div className="portfolio-card-date">
+                                            {formatDate(bet.timestamp)}
+                                        </div>
+
+                                        {/* Claim button for winners or detected claimable bets */}
+                                        {isClaimable && !bet.claimed && (
+                                            <button
+                                                className="claim-btn"
+                                                onClick={() => handleClaim(bet)}
+                                                disabled={claimingTx === bet.tx}
+                                            >
+                                                {claimingTx === bet.tx ? (
+                                                    <>⏳ Generating ZK Proof...</>
+                                                ) : (
+                                                    <>🎫 Claim Winnings</>
+                                                )}
+                                            </button>
+                                        )}
+
+                                        {/* Show result message if this bet was just acted on */}
+                                        {claimResult && claimResult.tx === bet.tx && (
+                                            <div style={{
+                                                marginTop: '10px',
+                                                padding: '8px',
+                                                borderRadius: '4px',
+                                                backgroundColor: claimResult.result.success ? 'rgba(0, 255, 0, 0.1)' : 'rgba(255, 0, 0, 0.1)',
+                                                color: claimResult.result.success ? '#4caf50' : '#f44336',
+                                                fontSize: '0.85rem',
+                                                textAlign: 'center'
+                                            }}>
+                                                {claimResult.result.success ?
+                                                    `Success! Payout: ${claimResult.result.claimAmount?.toFixed(2)}` :
+                                                    `Error: ${claimResult.result.error}`
+                                                }
+                                            </div>
+                                        )}
+
+                                        {/* View on explorer link and delete */}
+                                        <div className="portfolio-card-actions">
+                                            <a
+                                                href={`https://solscan.io/tx/${bet.tx}?cluster=devnet`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="portfolio-card-link"
+                                            >
+                                                View on Solscan →
+                                            </a>
+                                            <button
+                                                onClick={() => handleDelete(bet.tx)}
+                                                disabled={deletingTx === bet.tx}
+                                                title="Delete bet"
+                                                className="portfolio-card-delete"
+                                            >
+                                                {deletingTx === bet.tx ? '⏳' : '🗑️'}
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
 

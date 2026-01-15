@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { PredictEvent, Market, formatPrice, formatVolume, getCategoryColor } from "@/lib/jup-predict";
 import { placeBet, fetchUserMarketBet, fetchMarketTotals, calculatePotentialPayout, Bet } from "@/lib/confidential-betting";
 import { fetchUserMint, fetchUserTokenAccount } from "@/utils/constants";
+import { PROTOCOL_INCO_MINT } from "@/lib/protocol";
 
 interface MarketModalProps {
     event: PredictEvent | null;
@@ -19,33 +20,66 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
     const [betting, setBetting] = useState(false);
     const [betResult, setBetResult] = useState<{ success: boolean; message: string } | null>(null);
     const [userMint, setUserMint] = useState<string | null>(null);
+    const [tokenType, setTokenType] = useState<"wsol" | "legacy">("wsol");
     const [hasTokens, setHasTokens] = useState(false);
 
     // Async data states
     const [totals, setTotals] = useState({ yes: 0, no: 0, total: 0 });
     const [existingBet, setExistingBet] = useState<Bet | null | undefined>(null);
 
+    // Get display unit based on token type
+    const unit = tokenType === "wsol" ? "WSOL" : "tokens";
+
     const { publicKey, sendTransaction, connected } = useWallet();
     const { connection } = useConnection();
     const wallet = useAnchorWallet();
 
-    // Fetch user's mint on connect
+    // Track if we've already fetched token account for this wallet/session
+    const tokenFetchedRef = useRef<string | null>(null);
+
+    // Check user's token accounts - support BOTH old per-wallet mints AND new protocol mint
     useEffect(() => {
         if (!publicKey || !connection) {
             setUserMint(null);
             setHasTokens(false);
+            tokenFetchedRef.current = null;
+            return;
+        }
+
+        const walletKey = publicKey.toBase58();
+        if (tokenFetchedRef.current === walletKey && userMint) {
             return;
         }
 
         (async () => {
-            const mint = await fetchUserMint(connection, publicKey);
-            if (mint) {
-                setUserMint(mint.pubkey.toBase58());
-                const account = await fetchUserTokenAccount(connection, publicKey, mint.pubkey);
-                setHasTokens(!!account);
+            // First, check for new protocol wSOL-backed mint
+            const protocolAccount = await fetchUserTokenAccount(connection, publicKey, PROTOCOL_INCO_MINT);
+            if (protocolAccount) {
+                setUserMint(PROTOCOL_INCO_MINT.toBase58());
+                setTokenType("wsol");
+                setHasTokens(true);
+                tokenFetchedRef.current = walletKey;
+                return;
             }
+
+            // Fallback: check for legacy per-wallet mint (backwards compatibility)
+            const legacyMint = await fetchUserMint(connection, publicKey);
+            if (legacyMint) {
+                setUserMint(legacyMint.pubkey.toBase58());
+                setTokenType("legacy");
+                const legacyAccount = await fetchUserTokenAccount(connection, publicKey, legacyMint.pubkey);
+                setHasTokens(!!legacyAccount);
+                tokenFetchedRef.current = walletKey;
+                return;
+            }
+
+            // No tokens found
+            setUserMint(null);
+            setHasTokens(false);
+            tokenFetchedRef.current = walletKey;
         })();
     }, [publicKey, connection]);
+
 
     useEffect(() => {
         if (!event) return;
@@ -135,6 +169,41 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
         return event.markets;
     }, [event]);
 
+    // Check if this is a multi-team sports/esports event
+    const isMultiTeamEvent = useMemo(() => {
+        return relevantMarkets && relevantMarkets.length > 1;
+    }, [relevantMarkets]);
+
+    // Sort markets by probability (descending) for better UX in large lists
+    const sortedMarkets = useMemo(() => {
+        if (!relevantMarkets) return [];
+        return [...relevantMarkets].sort((a, b) => {
+            const priceA = a.pricing?.buyYesPriceUsd || 0;
+            const priceB = b.pricing?.buyYesPriceUsd || 0;
+            return priceB - priceA; // Higher probability first
+        });
+    }, [relevantMarkets]);
+
+    // Get live odds from API pricing data
+    // API returns buyYesPriceUsd in micro-cents: 1,000,000 = $1.00 = 100 cents
+    // For prediction markets: price represents probability in cents (0-100)
+    // e.g., 730000 = 73 cents = 73% probability
+    const getMarketOdds = (market: Market): { probability: number; odds: number; volumeRaw: number } => {
+        const price = market.pricing?.buyYesPriceUsd;
+        const volume24h = market.pricing?.volume24h || 0;
+
+        if (price && price > 0) {
+            // Price is in micro-cents, divide by 10000 to get percentage
+            // 730000 / 10000 = 73%
+            const probability = Math.max(0.1, Math.min(99.9, price / 10000));
+            // Odds = 100 / probability (e.g., 73% = 1.37x, 1% = 100x)
+            const odds = 100 / probability;
+            return { probability, odds, volumeRaw: volume24h };
+        }
+        // Fallback for markets with no price data - use 1% as minimum
+        return { probability: 1, odds: 100, volumeRaw: volume24h };
+    };
+
     if (!event) return null;
 
     const totalPool = totals.yes + totals.no;
@@ -143,7 +212,7 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
     const yesPct = totalPool > 0 ? (totals.yes / totalPool) * 100 : 50;
     const noPct = 100 - yesPct;
 
-    // Calculate estimated payout using Parimutuel model
+    // Calculate estimated payout using Parimutuel model (for single YES/NO markets)
     const calculateLivePayout = (amount: number, outcome: "yes" | "no"): number => {
         if (amount <= 0) return 0;
 
@@ -154,6 +223,12 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
         };
 
         return calculatePotentialPayout(amount, outcome, estimatedTotals);
+    };
+
+    // Calculate payout for multi-team events using API odds
+    const calculateApiOddsPayout = (amount: number, odds: number): number => {
+        if (amount <= 0 || odds <= 0) return 0;
+        return amount * odds;
     };
 
     // Derived odds for display (Payout / Bet)
@@ -180,8 +255,23 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
         setBetResult(null);
 
         try {
-            const currentOdds = selectedOutcome === "yes" ? estYesOdds : estNoOdds;
-            const payout = calculateLivePayout(amount, selectedOutcome);
+            // For multi-team events, use API odds; for binary markets, use pool odds
+            let currentOdds: number;
+            let payout: number;
+
+            if (isMultiTeamEvent && selectedMarket) {
+                const { odds } = getMarketOdds(selectedMarket);
+                currentOdds = odds;
+                payout = calculateApiOddsPayout(amount, odds);
+            } else {
+                currentOdds = selectedOutcome === "yes" ? estYesOdds : estNoOdds;
+                payout = calculateLivePayout(amount, selectedOutcome);
+            }
+
+            // Determine team name for multi-team events
+            const teamName = isMultiTeamEvent && selectedMarket
+                ? (selectedMarket.metadata?.title || undefined)
+                : undefined;
 
             const result = await placeBet(
                 connection,
@@ -194,7 +284,9 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                 userMint,
                 currentOdds,
                 payout,
-                event.metadata?.imageUrl
+                event.metadata?.imageUrl,
+                undefined,  // signMessage - not used for now
+                teamName    // Team name for multi-outcome markets
             );
 
             if (result.success) {
@@ -224,9 +316,22 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
         setBetting(false);
     };
 
-    const potentialPayout = selectedOutcome && betAmount && parseFloat(betAmount) > 0
-        ? calculateLivePayout(parseFloat(betAmount), selectedOutcome)
-        : 0;
+    // Calculate potential payout based on event type
+    const getPotentialPayout = (): number => {
+        if (!selectedOutcome || !betAmount || parseFloat(betAmount) <= 0) return 0;
+
+        const amount = parseFloat(betAmount);
+
+        // For multi-team events, use API odds directly
+        if (isMultiTeamEvent && selectedMarket) {
+            const { odds } = getMarketOdds(selectedMarket);
+            return calculateApiOddsPayout(amount, odds);
+        }
+
+        // For single YES/NO markets, use parimutuel calculation
+        return calculateLivePayout(amount, selectedOutcome);
+    };
+    const potentialPayout = getPotentialPayout();
 
     return (
         <div className="modal-overlay" onClick={onClose}>
@@ -270,29 +375,45 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                     </div>
                 </div>
 
-                {/* Market selector if multiple markets */}
-                {relevantMarkets && relevantMarkets.length > 1 && (
-                    <div className="market-selector">
-                        <label style={{ display: 'block', marginBottom: '8px', color: '#aaa', fontSize: '0.9rem' }}>Select Market:</label>
-                        <select
-                            value={selectedMarket?.marketId || ""}
-                            onChange={(e) => {
-                                const m = relevantMarkets.find(m => m.marketId === e.target.value);
-                                if (m) setSelectedMarket(m);
-                                setSelectedOutcome(null);
-                            }}
-                        >
-                            {relevantMarkets.map(m => ( // Allow selecting closed markets to see results
-                                <option key={m.marketId} value={m.marketId}>
-                                    {m.metadata?.title || m.marketId}
-                                </option>
-                            ))}
-                        </select>
+                {/* Multi-Team Selection for Sports/Esports Events */}
+                {isMultiTeamEvent && (
+                    <div className="team-selection">
+                        <label className="bet-input-label" style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>Pick Your Winner</span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 400 }}>
+                                {sortedMarkets.length} options
+                            </span>
+                        </label>
+                        <div className="team-list">
+                            {sortedMarkets.map((market) => {
+                                const { probability, odds } = getMarketOdds(market);
+                                const isSelected = selectedMarket?.marketId === market.marketId && selectedOutcome === "yes";
+                                const teamName = market.metadata?.title || market.marketId;
+
+                                return (
+                                    <button
+                                        key={market.marketId}
+                                        className={`team-row ${isSelected ? 'selected' : ''} ${market.status !== 'open' ? 'disabled' : ''}`}
+                                        onClick={() => {
+                                            if (market.status === 'open') {
+                                                setSelectedMarket(market);
+                                                setSelectedOutcome("yes");
+                                            }
+                                        }}
+                                        disabled={betting || market.status !== 'open'}
+                                    >
+                                        <span className="team-row-name">{teamName}</span>
+                                        <span className="team-row-prob">{probability.toFixed(0)}%</span>
+                                        <span className="team-row-odds">{odds.toFixed(2)}x</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
 
-                {/* Pricing section */}
-                {selectedMarket && (
+                {/* Single Market Stats (only for non-team events) */}
+                {!isMultiTeamEvent && selectedMarket && (
                     <div className="modal-pricing">
                         {/* Large progress bar */}
                         <div className="modal-probability">
@@ -303,34 +424,81 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                                 />
                             </div>
                             <div className="probability-labels">
-                                <span className="yes">
-                                    {yesPct.toFixed(1)}%
-                                    {(!relevantMarkets || relevantMarkets.length <= 1) && " Yes"}
-                                </span>
-                                {(!relevantMarkets || relevantMarkets.length <= 1) && (
-                                    <span className="no">{noPct.toFixed(1)}% No</span>
-                                )}
+                                <span className="yes">{yesPct.toFixed(1)}% Yes</span>
+                                <span className="no">{noPct.toFixed(1)}% No</span>
                             </div>
                         </div>
 
                         {/* Stats */}
-                        <div className="modal-stats">
+                        <div className="modal-stats" style={{
+                            gridTemplateColumns: `repeat(${[
+                                selectedMarket.pricing.liquidityDollars,
+                                selectedMarket.pricing.openInterest
+                            ].filter(v => v && v > 0).length + 1}, 1fr)`
+                        }}>
+
+                            {/* Only show stats if > 0 */}
+                            {(selectedMarket.pricing.liquidityDollars || 0) > 0 && (
+                                <div className="stat">
+                                    <span className="stat-label">Liquidity</span>
+                                    <span className="stat-value">
+                                        ${(selectedMarket.pricing.liquidityDollars || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </span>
+                                </div>
+                            )}
+
+                            {(selectedMarket.pricing.openInterest || 0) > 0 && (
+                                <div className="stat">
+                                    <span className="stat-label">Open Interest</span>
+                                    <span className="stat-value">
+                                        ${selectedMarket.pricing.openInterest.toLocaleString()}
+                                    </span>
+                                </div>
+                            )}
+
                             <div className="stat">
-                                <span className="stat-label">24h Volume</span>
-                                <span className="stat-value">
-                                    ${selectedMarket.pricing.volume24h.toLocaleString()}
-                                </span>
+                                <span className="stat-label">Total Vol</span>
+                                <span className="stat-value mb-8">{formatVolume(event.volumeUsd)}</span>
                             </div>
-                            <div className="stat">
-                                <span className="stat-label">Total Volume</span>
-                                <span className="stat-value">{formatVolume(event.volumeUsd)}</span>
-                            </div>
-                            <div className="stat">
-                                <span className="stat-label">Open Interest</span>
-                                <span className="stat-value">
-                                    ${selectedMarket.pricing.openInterest.toLocaleString()}
-                                </span>
-                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Aggregated Stats for Multi-Team Events */}
+                {isMultiTeamEvent && relevantMarkets && (
+                    <div className="modal-stats" style={{
+                        marginTop: '16px', gridTemplateColumns: `repeat(${[
+                            relevantMarkets.reduce((s, m) => s + (m.pricing?.liquidityDollars || 0), 0),
+                            relevantMarkets.reduce((s, m) => s + (m.pricing?.openInterest || 0), 0)
+                        ].filter(v => v > 0).length + 1}, 1fr)`
+                    }}>
+
+                        {/* Calculated Sums */}
+                        {(() => {
+                            const totalLiq = relevantMarkets.reduce((sum, m) => sum + (m.pricing?.liquidityDollars || 0), 0);
+                            const totalOI = relevantMarkets.reduce((sum, m) => sum + (m.pricing?.openInterest || 0), 0);
+
+                            return (
+                                <>
+                                    {totalLiq > 0 && (
+                                        <div className="stat">
+                                            <span className="stat-label">Liquidity</span>
+                                            <span className="stat-value">${totalLiq.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                        </div>
+                                    )}
+                                    {totalOI > 0 && (
+                                        <div className="stat">
+                                            <span className="stat-label">Open Interest</span>
+                                            <span className="stat-value">${totalOI.toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                </>
+                            );
+                        })()}
+
+                        <div className="stat">
+                            <span className="stat-label">Total Vol</span>
+                            <span className="stat-value">{formatVolume(event.volumeUsd)}</span>
                         </div>
                     </div>
                 )}
@@ -360,64 +528,89 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                 {connected && hasTokens && !existingBet && selectedMarket?.status === "open" && event.isActive &&
                     (!selectedMarket.closeTime || (selectedMarket.closeTime * (selectedMarket.closeTime < 10000000000 ? 1000 : 1)) > Date.now()) && (
                         <div className="bet-flow">
-                            <label className="bet-input-label">1. Choose Your Prediction</label>
-                            <div className="outcome-selector">
-                                <button
-                                    className={`outcome-btn yes ${selectedOutcome === "yes" ? "selected" : ""}`}
-                                    onClick={() => setSelectedOutcome("yes")}
-                                    disabled={betting}
-                                    style={relevantMarkets && relevantMarkets.length > 1 ? { width: '100%' } : {}}
-                                >
-                                    <span className="outcome-label">
-                                        {relevantMarkets && relevantMarkets.length > 1 ? "WIN" : "YES"}
-                                    </span>
-                                    <span className="outcome-odds">{estYesOdds.toFixed(2)}x</span>
-                                    <span className="outcome-price">Est. Payout</span>
-                                </button>
-                                {(!relevantMarkets || relevantMarkets.length <= 1) && (
-                                    <button
-                                        className={`outcome-btn no ${selectedOutcome === "no" ? "selected" : ""}`}
-                                        onClick={() => setSelectedOutcome("no")}
-                                        disabled={betting}
-                                    >
-                                        <span className="outcome-label">NO</span>
-                                        <span className="outcome-odds">{estNoOdds.toFixed(2)}x</span>
-                                        <span className="outcome-price">Est. Payout</span>
-                                    </button>
-                                )}
-                            </div>
+                            {/* For non-multi-team events, show YES/NO selector */}
+                            {!isMultiTeamEvent && (
+                                <>
+                                    <label className="bet-input-label">1. Choose Your Prediction</label>
+                                    <div className="outcome-selector">
+                                        <button
+                                            className={`outcome-btn yes ${selectedOutcome === "yes" ? "selected" : ""}`}
+                                            onClick={() => setSelectedOutcome("yes")}
+                                            disabled={betting}
+                                        >
+                                            <span className="outcome-label">YES</span>
+                                            <span className="outcome-odds">{estYesOdds.toFixed(2)}x</span>
+                                            <span className="outcome-price">Est. Payout</span>
+                                        </button>
+                                        <button
+                                            className={`outcome-btn no ${selectedOutcome === "no" ? "selected" : ""}`}
+                                            onClick={() => setSelectedOutcome("no")}
+                                            disabled={betting}
+                                        >
+                                            <span className="outcome-label">NO</span>
+                                            <span className="outcome-odds">{estNoOdds.toFixed(2)}x</span>
+                                            <span className="outcome-price">Est. Payout</span>
+                                        </button>
+                                    </div>
+                                </>
+                            )}
 
                             {/* Step 2: Enter amount (shown after selecting outcome) */}
                             {selectedOutcome && (
                                 <div className="bet-amount-section">
-                                    <label className="bet-input-label">2. Enter Bet Amount (Confidential)</label>
-                                    <input
-                                        type="number"
-                                        placeholder="Enter amount..."
-                                        value={betAmount}
-                                        onChange={(e) => {
-                                            setBetAmount(e.target.value);
-                                            setBetResult(null);
-                                        }}
-                                        disabled={betting}
-                                        className="bet-input"
-                                        step="0.01"
-                                        min="0"
-                                    />
+                                    <label className="bet-input-label">
+                                        {isMultiTeamEvent
+                                            ? `2. Enter Wager (${unit})`
+                                            : `2. Bet Amount in ${unit}`}
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            type="number"
+                                            placeholder={`Enter ${unit.toLowerCase()}...`}
+                                            value={betAmount}
+                                            onChange={(e) => {
+                                                setBetAmount(e.target.value);
+                                                setBetResult(null);
+                                            }}
+                                            disabled={betting}
+                                            className="bet-input"
+                                            step="0.01"
+                                            min="0"
+                                            style={{ paddingRight: '50px' }}
+                                        />
+                                        <span style={{
+                                            position: 'absolute',
+                                            right: '12px',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            color: 'var(--muted)',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 500
+                                        }}>
+                                            {tokenType === "wsol" ? "◎" : "🪙"}
+                                        </span>
+                                    </div>
 
                                     {/* Live payout calculation */}
                                     {potentialPayout > 0 && (
                                         <div className={`potential-payout ${selectedOutcome}`}>
                                             <div className="payout-row">
-                                                <span>Your bet:</span>
-                                                <strong>🔒 {parseFloat(betAmount).toFixed(2)} tokens</strong>
+                                                <span>Your wager:</span>
+                                                <strong>🔒 {parseFloat(betAmount).toFixed(2)} {unit}</strong>
                                             </div>
                                             <div className="payout-row">
-                                                <span>If {selectedOutcome.toUpperCase()} wins:</span>
-                                                <strong>{potentialPayout.toFixed(2)} tokens</strong>
+                                                <span>
+                                                    If {isMultiTeamEvent && selectedMarket
+                                                        ? (selectedMarket.metadata?.title || 'selection')
+                                                        : selectedOutcome.toUpperCase()} wins:
+                                                </span>
+                                                <strong>{potentialPayout.toFixed(2)} {unit}</strong>
                                             </div>
                                             <div className="payout-multiplier">
-                                                {selectedOutcome === "yes" ? estYesOdds.toFixed(2) : estNoOdds.toFixed(2)}x potential return
+                                                {isMultiTeamEvent && selectedMarket
+                                                    ? getMarketOdds(selectedMarket).odds.toFixed(2)
+                                                    : (selectedOutcome === "yes" ? estYesOdds.toFixed(2) : estNoOdds.toFixed(2))
+                                                }x potential return
                                             </div>
                                         </div>
                                     )}
@@ -428,7 +621,12 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                                         onClick={handleBet}
                                         disabled={!betAmount || parseFloat(betAmount) <= 0 || betting}
                                     >
-                                        {betting ? "Placing Bet..." : `Place ${selectedOutcome.toUpperCase()} Bet`}
+                                        {betting
+                                            ? "Placing Bet..."
+                                            : isMultiTeamEvent && selectedMarket
+                                                ? `Bet on ${selectedMarket.metadata?.title || 'selection'}`
+                                                : `Place ${selectedOutcome.toUpperCase()} Bet`
+                                        }
                                     </button>
                                 </div>
                             )}
@@ -448,20 +646,48 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                 )}
                 {connected && !hasTokens && (
                     <p className="modal-disclaimer">
-                        <a href="/wallet" className="mint-link">Mint tokens</a> to start betting
+                        <a href="/wallet" className="mint-link">Deposit SOL</a> or mint tokens to start betting
                     </p>
                 )}
                 {existingBet && (
                     <p className="modal-disclaimer">You can only bet once per market</p>
                 )}
 
-                {/* Rules */}
-                {selectedMarket?.metadata?.rulesPrimary && (
-                    <div className="modal-rules">
-                        <h4>Resolution Rules</h4>
-                        <p>{selectedMarket.metadata.rulesPrimary}</p>
+                {/* Rules & Info */}
+                <div className="modal-rules">
+                    <h4>Market Info</h4>
+                    {selectedMarket?.metadata?.description && (
+                        <p className="description" style={{ marginBottom: '12px' }}>{selectedMarket.metadata.description}</p>
+                    )}
+
+                    <div className="dates-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px', fontSize: '0.75rem', color: 'var(--muted)' }}>
+                        {selectedMarket?.openTime && (
+                            <div>
+                                <span style={{ display: 'block', fontWeight: 600 }}>Opened</span>
+                                {new Date(selectedMarket.openTime * 1000).toLocaleString()}
+                            </div>
+                        )}
+                        {selectedMarket?.closeTime && (
+                            <div>
+                                <span style={{ display: 'block', fontWeight: 600 }}>Closes</span>
+                                {new Date(selectedMarket.closeTime * 1000).toLocaleString()}
+                            </div>
+                        )}
                     </div>
-                )}
+
+                    {selectedMarket?.metadata?.rulesPrimary && (
+                        <div style={{ marginBottom: '12px' }}>
+                            <h5 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '4px' }}>Resolution Rules</h5>
+                            <p>{selectedMarket.metadata.rulesPrimary}</p>
+                        </div>
+                    )}
+                    {selectedMarket?.metadata?.rulesSecondary && (
+                        <div>
+                            <h5 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '4px' }}>Additional Terms</h5>
+                            <p>{selectedMarket.metadata.rulesSecondary}</p>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

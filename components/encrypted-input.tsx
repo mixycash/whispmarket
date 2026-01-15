@@ -23,6 +23,31 @@ import {
   getProgram,
 } from "@/utils/constants";
 
+// Daily faucet limit configuration
+const DAILY_MINT_LIMIT = 500;
+const MINT_LIMIT_KEY_PREFIX = "whisp_daily_mint_";
+
+function getDailyMintKey(wallet: string): string {
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD UTC
+  return `${MINT_LIMIT_KEY_PREFIX}${wallet}_${today}`;
+}
+
+function getDailyMintedAmount(wallet: string): number {
+  if (typeof window === "undefined") return 0;
+  const key = getDailyMintKey(wallet);
+  return parseFloat(localStorage.getItem(key) || "0");
+}
+
+function setDailyMintedAmount(wallet: string, amount: number): void {
+  if (typeof window === "undefined") return;
+  const key = getDailyMintKey(wallet);
+  localStorage.setItem(key, amount.toString());
+}
+
+function getRemainingDailyMint(wallet: string): number {
+  return Math.max(0, DAILY_MINT_LIMIT - getDailyMintedAmount(wallet));
+}
+
 export default function EncryptedInput() {
   const { publicKey, connected, sendTransaction } = useWallet();
   const { connection } = useConnection();
@@ -36,6 +61,16 @@ export default function EncryptedInput() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dailyRemaining, setDailyRemaining] = useState<number>(DAILY_MINT_LIMIT);
+
+  // Update daily remaining when wallet changes
+  useEffect(() => {
+    if (publicKey) {
+      setDailyRemaining(getRemainingDailyMint(publicKey.toBase58()));
+    } else {
+      setDailyRemaining(DAILY_MINT_LIMIT);
+    }
+  }, [publicKey]);
 
   useEffect(() => {
     const key = publicKey?.toBase58() ?? null;
@@ -57,10 +92,25 @@ export default function EncryptedInput() {
 
   const handleEncrypt = async () => {
     if (!value) return;
+    const amount = parseFloat(value);
+
+    // Check daily limit
+    if (!publicKey) return setError("Connect wallet first");
+    const remaining = getRemainingDailyMint(publicKey.toBase58());
+    if (amount > remaining) {
+      return setError(`Daily limit: ${remaining.toFixed(0)} tokens remaining (max ${DAILY_MINT_LIMIT}/day)`);
+    }
+    if (amount <= 0) {
+      return setError("Amount must be greater than 0");
+    }
+    if (amount > 100) {
+      return setError("Max 100 tokens per mint (conserve liquidity)");
+    }
+
     setLoading(true);
     try {
       setEncrypted(
-        await encryptValue(BigInt(Math.floor(parseFloat(value) * 1e6)))
+        await encryptValue(BigInt(Math.floor(amount * 1e6)))
       );
     } catch (e: any) {
       setError(e.message || "Encryption failed");
@@ -166,6 +216,12 @@ export default function EncryptedInput() {
         ])
         .rpc();
 
+      // Track daily mint usage
+      const mintedAmount = parseFloat(value);
+      const currentMinted = getDailyMintedAmount(publicKey.toBase58());
+      setDailyMintedAmount(publicKey.toBase58(), currentMinted + mintedAmount);
+      setDailyRemaining(getRemainingDailyMint(publicKey.toBase58()));
+
       setTxHash(sig);
       setValue("");
       setEncrypted("");
@@ -182,8 +238,16 @@ export default function EncryptedInput() {
 
   return (
     <div className="mt-8 space-y-6">
+      {/* Daily limit indicator */}
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-[var(--muted)]">Daily Faucet Limit</span>
+        <span className={dailyRemaining > 0 ? "text-[var(--accent)]" : "text-[var(--danger)]"}>
+          {dailyRemaining.toFixed(0)} / {DAILY_MINT_LIMIT} remaining
+        </span>
+      </div>
+
       <div>
-        <label className="block text-xs font-semibold text-[var(--muted)] uppercase tracking-wider mb-2">Amount to Mint</label>
+        <label className="block text-xs font-semibold text-[var(--muted)] uppercase tracking-wider mb-2">Amount to Mint (max 100)</label>
         <div className="flex gap-2">
           <input
             type="number"

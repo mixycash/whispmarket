@@ -9,6 +9,7 @@ import {
   fetchUserTokenAccount,
   extractHandle,
 } from "@/utils/constants";
+import { PROTOCOL_INCO_MINT } from "@/lib/protocol";
 import { searchEvents, PredictEvent } from "@/lib/jup-predict";
 import Link from "next/link";
 
@@ -17,9 +18,14 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
   const { connection } = useConnection();
   const { setVisible } = useWalletModal();
 
-  const [balance, setBalance] = useState<string | null>(null);
+  // Balances state - track both types
+  const [wsolBalance, setWsolBalance] = useState<string | null>(null);
+  const [legacyBalance, setLegacyBalance] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [lastFetch, setLastFetch] = useState(0);
+  const [showBalanceDropdown, setShowBalanceDropdown] = useState(false);
+  const balanceRef = useRef<HTMLDivElement>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -31,46 +37,78 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
     return `${address.slice(0, 4)}...${address.slice(-4)}`;
   };
 
+  // Get total balance for display
+  const totalBalance = (): string => {
+    const wsol = parseFloat(wsolBalance || "0");
+    const legacy = parseFloat(legacyBalance || "0");
+    return (wsol + legacy).toFixed(2);
+  };
+
   const handleRevealBalance = async () => {
     if (!connected || !publicKey || !signMessage) return;
+
+    const now = Date.now();
+    if (now - lastFetch < 5000 && revealed) {
+      console.log("[Header] Rate limiting balance reveal request");
+      return;
+    }
+
     setLoading(true);
+    setLastFetch(now);
 
     try {
-      const mint = await fetchUserMint(connection, publicKey);
-      if (!mint) {
-        setBalance("No mint");
-        setRevealed(true);
-        return;
+      // Check wSOL-backed protocol mint
+      const wsolAcc = await fetchUserTokenAccount(connection, publicKey, PROTOCOL_INCO_MINT);
+      if (wsolAcc) {
+        const handle = extractHandle(wsolAcc.data);
+        if (handle !== BigInt(0)) {
+          const result = await decrypt([handle.toString()], { address: publicKey, signMessage });
+          setWsolBalance((Number(BigInt(result.plaintexts?.[0] ?? "0")) / 1e6).toFixed(2));
+        } else {
+          setWsolBalance("0.00");
+        }
+      } else {
+        setWsolBalance(null);
       }
 
-      const acc = await fetchUserTokenAccount(connection, publicKey, mint.pubkey);
-      if (!acc) {
-        setBalance("No account");
-        setRevealed(true);
-        return;
+      // Check legacy per-wallet mint
+      const legacyMint = await fetchUserMint(connection, publicKey);
+      if (legacyMint) {
+        const legacyAcc = await fetchUserTokenAccount(connection, publicKey, legacyMint.pubkey);
+        if (legacyAcc) {
+          const handle = extractHandle(legacyAcc.data);
+          if (handle !== BigInt(0)) {
+            const result = await decrypt([handle.toString()], { address: publicKey, signMessage });
+            setLegacyBalance((Number(BigInt(result.plaintexts?.[0] ?? "0")) / 1e6).toFixed(2));
+          } else {
+            setLegacyBalance("0.00");
+          }
+        }
+      } else {
+        setLegacyBalance(null);
       }
 
-      const handle = extractHandle(acc.data);
-      if (handle === BigInt(0)) {
-        setBalance("0");
-        setRevealed(true);
-        return;
-      }
-
-      const result = await decrypt([handle.toString()], {
-        address: publicKey,
-        signMessage,
-      });
-      setBalance((Number(BigInt(result.plaintexts?.[0] ?? "0")) / 1e6).toFixed(2));
       setRevealed(true);
     } catch (e) {
       console.error(e);
-      setBalance("Error");
+      setWsolBalance("Error");
       setRevealed(true);
     } finally {
       setLoading(false);
     }
   };
+
+  // Close balance dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (balanceRef.current && !balanceRef.current.contains(e.target as Node)) {
+        setShowBalanceDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
 
   // Handle search input
   const handleSearch = (query: string) => {
@@ -105,14 +143,16 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
 
   // Reset when wallet changes
   useEffect(() => {
-    setBalance(null);
+    setWsolBalance(null);
+    setLegacyBalance(null);
     setRevealed(false);
   }, [publicKey]);
 
   // Listen for mint events
   useEffect(() => {
     const onMint = () => {
-      setBalance(null);
+      setWsolBalance(null);
+      setLegacyBalance(null);
       setRevealed(false);
     };
     window.addEventListener("token-minted", onMint);
@@ -120,30 +160,40 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
   }, []);
 
   return (
-    <header className="flex items-center justify-between py-4">
-      <div className="flex items-center gap-6">
+    <header className="flex items-center justify-between py-2 pt-1">
+      <div className="flex items-center gap-10">
         <Link href="/" className="hover:opacity-80 transition-opacity">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-lg">WhispMarket</span>
+            <span className="font-[family-name:var(--font-space)] font-bold text-2xl text-white tracking-tight">WHISPI</span>
           </div>
         </Link>
 
-        <Link
-          href="/wallet"
-          className="text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
-        >
-          Wallet
-        </Link>
+        <div className="flex items-center gap-6">
+          <Link
+            href="/wallet"
+            className="text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+          >
+            Wallet
+          </Link>
 
-        <Link
-          href="/portfolio"
-          className="text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
-        >
-          Portfolio
-        </Link>
+          <Link
+            href="/portfolio"
+            className="text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+          >
+            Portfolio
+          </Link>
+        </div>
 
+
+      </div>
+
+      <div className="flex items-center gap-3">
         {/* Search Bar */}
         <div ref={searchRef} className="search-container">
+          <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
           <input
             type="text"
             placeholder="Search markets..."
@@ -155,10 +205,6 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
           {showResults && searchResults.length > 0 && (
             <div
               className="search-dropdown"
-              style={{
-                top: searchRef.current ? searchRef.current.getBoundingClientRect().bottom + 8 : 'auto',
-                left: searchRef.current ? searchRef.current.getBoundingClientRect().left : 'auto'
-              }}
             >
               {searchResults.map(event => (
                 <button
@@ -173,50 +219,119 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
             </div>
           )}
         </div>
-      </div>
-
-      <div className="flex items-center gap-4">
-        {/* Confidential Balance - only show when connected */}
+        {/* Confidential Balance with Dropdown */}
         {connected && publicKey && (
-          <div className="flex items-center gap-2 bg-[var(--surface)] border border-[var(--border-subtle)] px-3 py-1.5 rounded-lg">
-            <span className="text-xs text-[var(--muted)]">CONF</span>
-            <span className="font-mono text-sm font-medium">
-              {loading ? "..." : revealed ? balance : "••••"}
-            </span>
-            <button
-              onClick={handleRevealBalance}
-              disabled={loading}
-              className="text-[var(--muted)] hover:text-[var(--foreground)] transition-colors disabled:opacity-50"
-              title={revealed ? "Refresh balance" : "Reveal balance"}
+          <div ref={balanceRef} className="relative">
+            <div
+              className="flex items-center h-9 bg-[var(--surface)] border border-[var(--border-subtle)] rounded-lg pl-3 pr-1 gap-2 hover:border-[var(--border)] transition-colors cursor-pointer"
+              onClick={() => revealed && setShowBalanceDropdown(!showBalanceDropdown)}
             >
-              {loading ? (
-                <span className="animate-spin">⟳</span>
-              ) : revealed ? (
-                <span>↻</span>
-              ) : (
-                <span>👁</span>
+              <div className="flex items-center gap-1.5 text-[var(--muted)]" title="Confidential Balance">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+              </div>
+              <span className="font-mono text-sm font-medium text-[var(--foreground)] min-w-[4ch] text-center">
+                {loading ? "..." : revealed ? totalBalance() : "••••"}
+              </span>
+              {revealed && (wsolBalance || legacyBalance) && (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--muted)]">
+                  <path d="M6 9l6 6 6-6"></path>
+                </svg>
               )}
-            </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleRevealBalance(); }}
+                disabled={loading}
+                className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-[var(--foreground)] transition-colors disabled:opacity-50"
+                title={revealed ? "Refresh balance" : "Reveal balance"}
+              >
+                {loading ? (
+                  <span className="animate-spin text-xs">⟳</span>
+                ) : revealed ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 4v6h-6"></path>
+                    <path d="M1 20v-6h6"></path>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                )}
+              </button>
+            </div>
+
+            {/* Balance Dropdown */}
+            {showBalanceDropdown && revealed && (
+              <div className="absolute top-full right-0 mt-2 w-52 bg-[var(--surface)] border border-[var(--border-subtle)] rounded-lg shadow-lg z-50 overflow-hidden">
+                <div className="p-3 border-b border-[var(--border-subtle)]">
+                  <div className="text-xs text-[var(--muted)] uppercase tracking-wider mb-1">Total Balance</div>
+                  <div className="text-xl font-bold font-mono">{totalBalance()}</div>
+                </div>
+
+                {wsolBalance !== null && (
+                  <div className="p-2 px-3 flex justify-between items-center hover:bg-[var(--surface-hover)] cursor-default">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">◎</span>
+                      <span className="text-sm">wSOL</span>
+                    </div>
+                    <span className="font-mono text-sm font-medium">{wsolBalance}</span>
+                  </div>
+                )}
+                {legacyBalance !== null && (
+                  <div className="p-2 px-3 flex justify-between items-center hover:bg-[var(--surface-hover)] cursor-default">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🪙</span>
+                      <span className="text-sm">Legacy</span>
+                    </div>
+                    <span className="font-mono text-sm font-medium">{legacyBalance}</span>
+                  </div>
+                )}
+                {!wsolBalance && !legacyBalance && (
+                  <div className="p-3 text-sm text-[var(--muted)] text-center">
+                    No tokens found
+                  </div>
+                )}
+
+                {/* Deposit Link */}
+                <div className="border-t border-[var(--border-subtle)]">
+                  <a
+                    href="/wallet"
+                    className="block p-2 px-3 text-sm text-[var(--accent)] hover:bg-[var(--surface-hover)] text-center font-medium"
+                  >
+                    + Deposit SOL
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
+
         {/* Wallet Connection */}
         {publicKey ? (
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-[var(--foreground)] bg-[var(--surface)] border border-[var(--border-subtle)] px-3 py-1.5 rounded-lg">
+          <div className="flex items-center h-9 bg-[var(--surface)] border border-[var(--border-subtle)] rounded-lg pl-3 pr-1 gap-2 hover:border-[var(--border)] transition-colors">
+            <span className="text-sm font-medium text-[var(--foreground)]">
               {formatAddress(publicKey.toBase58())}
             </span>
             <button
               onClick={() => disconnect()}
-              className="text-sm font-medium text-[var(--muted)] hover:text-[var(--danger)] transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--danger-bg)] text-[var(--muted)] hover:text-[var(--danger)] transition-colors"
+              title="Disconnect"
             >
-              ✕
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
             </button>
           </div>
         ) : (
           <button
             onClick={() => setVisible(true)}
-            className="rounded-lg bg-[var(--accent)] text-white px-4 py-2 text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors"
+            className="h-9 px-4 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors shadow-lg shadow-[rgba(44,156,219,0.2)]"
           >
             Connect Wallet
           </button>

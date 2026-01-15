@@ -15,6 +15,16 @@ export interface ClaimProof {
     claimable: boolean;
 }
 
+/**
+ * Encrypted bet data - server only sees this encrypted blob
+ * Only the user's wallet can decrypt to reveal amount/outcome
+ */
+export interface EncryptedBetData {
+    ciphertext: string;     // Base64 encrypted JSON of {amount, outcome, odds, potentialPayout}
+    iv: string;             // Initialization vector for AES-GCM
+    salt: string;           // Salt for key derivation
+}
+
 export interface Bet {
     marketId: string;
     marketTitle: string;
@@ -31,5 +41,10 @@ export interface Bet {
     commitment?: BetCommitment;
     claimed?: boolean;
     mint?: string;
+    // Team/selection name for multi-outcome markets (sports, esports, etc.)
+    teamName?: string;  // e.g., "Miami Heat", "Team Liquid" - shown instead of YES/NO
+    // Privacy-enhanced fields
+    encryptedData?: EncryptedBetData;  // Client-encrypted bet details
+    isEncrypted?: boolean;              // Flag indicating data is encrypted
 }
 

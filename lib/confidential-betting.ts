@@ -1,7 +1,11 @@
 /**
  * Confidential Betting Layer
  * Uses existing Inco token transfers - no new program needed
- * Refactored to use Server Actions for persistence (Neon Postgres)
+ * 
+ * PRIVACY FEATURES:
+ * - Client-side AES encryption of bet details (only wallet owner can decrypt)
+ * - On-chain commitment memos (verifiable by anyone)
+ * - User-initiated claims via /api/claim endpoint
  */
 
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
@@ -11,13 +15,12 @@ import { fetchMarket, fetchMarketFresh } from "./jup-predict";
 import {
     BetCommitment,
     generateBetCommitment,
-    createCommitmentMemo,
     generateClaimProof,
     verifyClaimProof,
     calculateClaimAmount,
     ClaimProof
 } from "./bet-commitment";
-import { Bet } from "./schema";
+import { Bet, EncryptedBetData } from "./schema";
 import {
     saveBet,
     getBets,
@@ -28,6 +31,13 @@ import {
     clearLostBets as clearLostBetsAction
 } from "@/app/actions";
 import { PROTOCOL_VAULT, PROTOCOL_FEE } from "./protocol";
+import {
+    encryptBetData,
+    decryptBetData,
+    getCachedOrDeriveKey,
+    DecryptedBetData
+} from "./crypto";
+import { createOnChainMemo } from "./nullifier-chain";
 
 // Re-export shared types and logic
 export { generateClaimProof, verifyClaimProof, calculateClaimAmount };
@@ -46,7 +56,6 @@ export const fetchUserBets = async (wallet: string): Promise<Bet[]> => {
 export const clearLostBets = async (wallet: string): Promise<void> => {
     await clearLostBetsAction(wallet);
 };
-
 
 /**
  * Get bets for a specific market (Async)
@@ -76,8 +85,8 @@ export const fetchMarketTotals = async (marketId: string): Promise<{ yes: number
 };
 
 /**
- * Place a confidential bet
- * Transfers encrypted tokens to protocol vault and saves to DB
+ * Place a confidential bet with client-side encryption
+ * Transfers encrypted tokens to protocol vault and saves encrypted bet to DB
  */
 export const placeBet = async (
     connection: Connection,
@@ -90,7 +99,9 @@ export const placeBet = async (
     mint: string,
     odds?: number,
     potentialPayout?: number,
-    imageUrl?: string
+    imageUrl?: string,
+    signMessage?: (message: Uint8Array) => Promise<Uint8Array>,
+    teamName?: string  // Team/selection name for multi-outcome markets
 ): Promise<TransferResult> => {
     // Validate
     if (amount <= 0) {
@@ -98,6 +109,7 @@ export const placeBet = async (
     }
 
     // Transfer to vault using existing Inco transfer
+    // Note: The memo is attached during the Inco transfer
     const result = await simpleTransfer(
         connection,
         wallet,
@@ -109,20 +121,49 @@ export const placeBet = async (
 
     // Store bet in DB on success
     if (result.success) {
+        const walletAddress = wallet.publicKey.toBase58();
+
         // Generate cryptographic commitment for this bet
         const commitment = generateBetCommitment(
             marketId,
             outcome,
             amount,
-            wallet.publicKey.toBase58()
+            walletAddress
         );
+
+        // Create on-chain memo format
+        const memoData = createOnChainMemo(commitment.commitmentHash, commitment.nullifier, marketId);
+        console.log(`[On-Chain Memo] ${memoData}`);
+
+        // Encrypt bet details if signMessage is available
+        let encryptedData: EncryptedBetData | undefined;
+        let isEncrypted = false;
+
+        if (signMessage) {
+            try {
+                const key = await getCachedOrDeriveKey(walletAddress, signMessage);
+                if (key) {
+                    const betData: DecryptedBetData = {
+                        amount,
+                        outcome,
+                        odds,
+                        potentialPayout,
+                    };
+                    encryptedData = await encryptBetData(betData, key);
+                    isEncrypted = true;
+                    console.log(`[Encryption] Bet data encrypted successfully`);
+                }
+            } catch (e) {
+                console.warn("Failed to encrypt bet data, storing plaintext:", e);
+            }
+        }
 
         const newBet: Bet = {
             marketId,
             marketTitle,
             outcome,
             amount,
-            wallet: wallet.publicKey.toBase58(),
+            wallet: walletAddress,
             timestamp: Date.now(),
             tx: result.signature,
             status: "pending",
@@ -132,16 +173,46 @@ export const placeBet = async (
             commitment, // On-chain cryptographic commitment
             claimed: false,
             mint,
+            teamName,  // Team/selection name for multi-outcome markets
+            // Privacy fields
+            encryptedData,
+            isEncrypted,
         };
 
         await saveBet(newBet);
-
-
-        // Log commitment memo
-        console.log(`[Commitment] ${createCommitmentMemo(commitment)}`);
     }
 
     return result;
+};
+
+/**
+ * Decrypt a bet's encrypted data using wallet signature
+ */
+export const decryptBet = async (
+    bet: Bet,
+    signMessage: (message: Uint8Array) => Promise<Uint8Array>
+): Promise<DecryptedBetData | null> => {
+    if (!bet.isEncrypted || !bet.encryptedData) {
+        // Return plaintext data if not encrypted
+        return {
+            amount: bet.amount,
+            outcome: bet.outcome,
+            odds: bet.odds,
+            potentialPayout: bet.potentialPayout,
+        };
+    }
+
+    try {
+        const key = await getCachedOrDeriveKey(bet.wallet, signMessage);
+        if (!key) {
+            console.error("Could not derive decryption key");
+            return null;
+        }
+        return await decryptBetData(bet.encryptedData, key);
+    } catch (e) {
+        console.error("Failed to decrypt bet:", e);
+        return null;
+    }
 };
 
 /**
@@ -238,20 +309,66 @@ export const clearBets = () => {
 };
 
 /**
- * Claim winnings for a bet using ZK proof
+ * Claim result interface
  */
 export interface ClaimResult {
     success: boolean;
     proof?: ClaimProof;
     claimAmount?: number;
+    payoutTx?: string;
     error?: string;
 }
 
+/**
+ * Check if a bet is claimable (client-side check before API call)
+ */
+export const checkClaimable = async (bet: Bet): Promise<{
+    claimable: boolean;
+    reason?: string;
+    estimatedPayout?: number;
+}> => {
+    if (bet.claimed) {
+        return { claimable: false, reason: "Already claimed" };
+    }
+
+    if (bet.status === "lost") {
+        return { claimable: false, reason: "Bet was lost" };
+    }
+
+    try {
+        const market = await fetchMarketFresh(bet.marketId);
+
+        if (market.status !== "closed") {
+            return { claimable: false, reason: "Market not settled yet" };
+        }
+
+        const result = market.result?.toLowerCase();
+        if (bet.outcome !== result) {
+            return { claimable: false, reason: "Bet lost - outcome did not match" };
+        }
+
+        // Calculate estimated payout
+        const totals = await fetchMarketTotals(bet.marketId);
+        const winningPool = result === "yes" ? totals.yes : totals.no;
+        const losingPool = result === "yes" ? totals.no : totals.yes;
+        const payout = calculateClaimAmount(bet.amount, winningPool, losingPool, PROTOCOL_FEE);
+
+        return { claimable: true, estimatedPayout: payout };
+    } catch (e) {
+        console.error("Error checking claimable:", e);
+        return { claimable: false, reason: "Failed to check market status" };
+    }
+};
+
+/**
+ * User-initiated claim - calls /api/claim endpoint
+ * This replaces the centralized settlement bot for winning bets
+ */
 export const claimBet = async (
     bet: Bet,
     marketResult: "yes" | "no"
 ): Promise<ClaimResult> => {
-    // Generate claim proof
+    // Generate claim proof client-side
     const proof = generateClaimProof(
         {
             marketId: bet.marketId,
@@ -263,9 +380,8 @@ export const claimBet = async (
         marketResult
     );
 
-    // Verify the proof (Client side check)
+    // Client-side verification first
     const verification = verifyClaimProof(proof, marketResult);
-
     if (!verification.valid) {
         return {
             success: false,
@@ -273,33 +389,68 @@ export const claimBet = async (
         };
     }
 
-    // Check if already claimed (Server check)
+    // Check if already claimed locally
     if (bet.claimed) {
         return { success: false, error: "This bet has already been claimed" };
     }
 
-    // Check nullifier on server
-    const isUsed = await checkNullifierUsed(proof.nullifier);
-    if (isUsed) {
-        return { success: false, error: "This bet has already been claimed (nullifier used)" };
+    // Call the claim API
+    try {
+        const response = await fetch("/api/claim", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                proof,
+                betTx: bet.tx,
+                walletAddress: bet.wallet,
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            return {
+                success: false,
+                error: data.error || "Claim failed",
+            };
+        }
+
+        return {
+            success: true,
+            proof,
+            claimAmount: data.payout,
+            payoutTx: data.payoutTx,
+        };
+    } catch (e) {
+        console.error("Claim API error:", e);
+        return {
+            success: false,
+            error: "Failed to call claim API",
+        };
     }
-
-    // Calculate claim amount using Parimutuel logic (fetch current totals)
-    const totals = await fetchMarketTotals(bet.marketId);
-    const winningPool = marketResult === "yes" ? totals.yes : totals.no;
-    const losingPool = marketResult === "yes" ? totals.no : totals.yes;
-
-    const claimAmount = calculateClaimAmount(bet.amount, winningPool, losingPool, PROTOCOL_FEE);
-
-    // Mark nullifier as used
-    await markNullifierUsedServer(proof.nullifier);
-
-    // Mark bet as claimed
-    await updateBetStatus(bet.tx, "won", true);
-
-    return {
-        success: true,
-        proof,
-        claimAmount,
-    };
 };
+
+/**
+ * Check claim status via API (can be used to poll for settlement)
+ */
+export const getClaimStatus = async (
+    betTx: string,
+    walletAddress: string
+): Promise<{
+    claimable: boolean;
+    status?: string;
+    reason?: string;
+    estimatedPayout?: number;
+    marketResult?: string;
+}> => {
+    try {
+        const response = await fetch(
+            `/api/claim?betTx=${encodeURIComponent(betTx)}&wallet=${encodeURIComponent(walletAddress)}`
+        );
+        return await response.json();
+    } catch (e) {
+        console.error("Error checking claim status:", e);
+        return { claimable: false, reason: "Failed to check status" };
+    }
+};
+

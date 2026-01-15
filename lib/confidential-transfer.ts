@@ -15,7 +15,7 @@ import {
     extractHandle,
     fetchUserTokenAccount,
     getProgram,
-} from "@/utils/constants";
+} from "../utils/constants";
 // Removed direct idl import to use shared constants/types source of truth
 
 export interface TransferParams {

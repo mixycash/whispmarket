@@ -3,20 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "concurrently \"next dev --turbopack\" \"tsx scripts/settlement-bot.ts\"",
     "build": "next build",
-    "start": "next start",
+    "start": "concurrently \"next start\" \"tsx scripts/settlement-bot.ts\"",
     "lint": "eslint"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
     "@inco/solana-sdk": "^0.0.2",
+    "@neondatabase/serverless": "^1.0.2",
     "@solana/wallet-adapter-react": "^0.15.35",
     "@solana/wallet-adapter-react-ui": "^0.9.35",
     "@solana/wallet-adapter-wallets": "^0.19.32",
     "@solana/web3.js": "^1.95.3",
     "bs58": "^6.0.0",
     "buffer": "^6.0.3",
+    "dotenv": "^17.2.3",
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3"
@@ -26,9 +28,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   },
   "ignoreScripts": [

@@ -1,38 +1,10 @@
 /**
  * Confidential Betting Layer
  * Uses existing Inco token transfers - no new program needed
- * 
- * ═══════════════════════════════════════════════════════════════
- * PRIVACY FEATURES
- * ═══════════════════════════════════════════════════════════════
- * 
- * 1. ENCRYPTED AMOUNTS: Bet amounts encrypted via Inco FHE
- * 2. ON-CHAIN COMMITMENTS: Cryptographic bet commitments stored on-chain
- * 3. ZK CLAIM PROOFS: Winners generate proofs to claim without revealing details
- * 
- * ═══════════════════════════════════════════════════════════════
- * SETTLEMENT MODEL
- * ═══════════════════════════════════════════════════════════════
- * 
- * 1. PLACING BETS:
- *    - User bets → tokens transferred to PROTOCOL_VAULT
- *    - Bet commitment hash stored on-chain (hides details)
- *    - Bet details stored locally (amounts encrypted on-chain)
- * 
- * 2. MARKET RESOLUTION:
- *    - Jupiter markets resolve with YES/NO result
- *    - Bet statuses updated via refreshBetStatuses()
- * 
- * 3. CLAIMING (ZK Proof):
- *    - WINNERS: Generate claim proof → verify → receive payout
- *    - LOSERS: Funds remain in vault (house keeps losing bets)
- *    - FEES: 2% of winning payouts sent to PROTOCOL_TREASURY
- * 
- * NOTE: Claim proofs use nullifiers to prevent double-claiming
- * ═══════════════════════════════════════════════════════════════
+ * Refactored to use Server Actions for persistence (Neon Postgres)
  */
 
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { AnchorWallet } from "@solana/wallet-adapter-react";
 import { simpleTransfer, TransferResult } from "./confidential-transfer";
 import { fetchMarket, fetchMarketFresh } from "./jup-predict";
@@ -42,80 +14,60 @@ import {
     createCommitmentMemo,
     generateClaimProof,
     verifyClaimProof,
-    markNullifierUsed,
     calculateClaimAmount,
     ClaimProof
 } from "./bet-commitment";
+import { Bet } from "./schema";
+import {
+    saveBet,
+    getBets,
+    getBetsByMarket,
+    updateBetStatus,
+    markNullifierUsed as markNullifierUsedServer,
+    checkNullifierUsed,
+    clearLostBets as clearLostBetsAction
+} from "@/app/actions";
+import { PROTOCOL_VAULT, PROTOCOL_FEE } from "./protocol";
 
-// Protocol wallets - Public keys (safe to expose)
-// Vault: Receives all bets, holds funds until settlement
-export const PROTOCOL_VAULT = new PublicKey(
-    "92Xoz2ZNC4RjTpPCUizwKRgXBAe7tJ1XNtZiFGFXKiMJ"
-);
+// Re-export shared types and logic
+export { generateClaimProof, verifyClaimProof, calculateClaimAmount };
+export type { ClaimProof, Bet };
 
-// Treasury: Receives 2% fee on winning payouts
-export const PROTOCOL_TREASURY = new PublicKey(
-    "EBybdh3Jzjjue48HU6tYhUqPhg1LfEzjkzmcCRqDcbcA"
-);
-
-// Protocol fee: 2% taken from winning payouts
-export const PROTOCOL_FEE = 0.02;
-
-// Bet interface with on-chain commitment
-export interface Bet {
-    marketId: string;
-    marketTitle: string;
-    outcome: "yes" | "no";
-    amount: number;
-    wallet: string;
-    timestamp: number;
-    tx: string;
-    status?: "pending" | "won" | "lost";
-    odds?: number;           // Odds locked in at bet time
-    potentialPayout?: number; // Potential payout if bet wins
-    imageUrl?: string;       // Market image for display
-    commitment?: BetCommitment; // On-chain cryptographic commitment
-    claimed?: boolean;       // Whether winnings have been claimed
-}
-
-// Re-export for use in portfolio
-export { generateClaimProof, verifyClaimProof, markNullifierUsed, calculateClaimAmount };
-export type { ClaimProof };
-
-const BETS_KEY = "whisp_bets";
-
-// Get all bets from localStorage
-const getBets = (): Bet[] => {
-    if (typeof window === "undefined") return [];
-    try {
-        return JSON.parse(localStorage.getItem(BETS_KEY) || "[]");
-    } catch {
-        return [];
-    }
+/**
+ * Get bets for a specific user (Async)
+ */
+export const fetchUserBets = async (wallet: string): Promise<Bet[]> => {
+    return getBets(wallet);
 };
 
-// Save a new bet
-const saveBet = (bet: Bet) => {
-    const bets = getBets();
-    bets.push(bet);
-    localStorage.setItem(BETS_KEY, JSON.stringify(bets));
+/**
+ * Clear lost bets for a user (Async)
+ */
+export const clearLostBets = async (wallet: string): Promise<void> => {
+    await clearLostBetsAction(wallet);
 };
 
-// Get bets for a specific user
-export const getUserBets = (wallet: string): Bet[] =>
-    getBets().filter((b) => b.wallet === wallet);
 
-// Get bets for a specific market
-export const getMarketBets = (marketId: string): Bet[] =>
-    getBets().filter((b) => b.marketId === marketId);
+/**
+ * Get bets for a specific market (Async)
+ */
+export const fetchMarketBets = async (marketId: string): Promise<Bet[]> => {
+    return getBetsByMarket(marketId);
+};
 
-// Get user's bet on a specific market
-export const getUserMarketBet = (marketId: string, wallet: string): Bet | undefined =>
-    getBets().find((b) => b.marketId === marketId && b.wallet === wallet);
+/**
+ * Get user's bet on a specific market (Async)
+ */
+export const fetchUserMarketBet = async (marketId: string, wallet: string): Promise<Bet | undefined> => {
+    const bets = await getBets(wallet);
+    return bets.find((b) => b.marketId === marketId);
+};
 
-// Calculate total bets for each outcome
-export const getMarketTotals = (marketId: string) => {
-    const bets = getMarketBets(marketId);
+/**
+ * Calculate total bets for each outcome (Async)
+ */
+export const fetchMarketTotals = async (marketId: string): Promise<{ yes: number; no: number; total: number }> => {
+    const bets = await fetchMarketBets(marketId);
     return {
         yes: bets.filter((b) => b.outcome === "yes").reduce((sum, b) => sum + b.amount, 0),
         no: bets.filter((b) => b.outcome === "no").reduce((sum, b) => sum + b.amount, 0),
@@ -125,12 +77,12 @@ export const getMarketTotals = (marketId: string) => {
 
 /**
  * Place a confidential bet
- * Transfers encrypted tokens to protocol vault
+ * Transfers encrypted tokens to protocol vault and saves to DB
  */
 export const placeBet = async (
     connection: Connection,
     wallet: AnchorWallet,
-    sendTransaction: (tx: any, conn: Connection) => Promise<string>,
+    sendTransaction: (tx: Transaction, conn: Connection) => Promise<string>,
     marketId: string,
     marketTitle: string,
     outcome: "yes" | "no",
@@ -155,7 +107,7 @@ export const placeBet = async (
         mint
     );
 
-    // Store bet locally on success with on-chain commitment
+    // Store bet in DB on success
     if (result.success) {
         // Generate cryptographic commitment for this bet
         const commitment = generateBetCommitment(
@@ -165,7 +117,7 @@ export const placeBet = async (
             wallet.publicKey.toBase58()
         );
 
-        saveBet({
+        const newBet: Bet = {
             marketId,
             marketTitle,
             outcome,
@@ -179,9 +131,13 @@ export const placeBet = async (
             imageUrl,
             commitment, // On-chain cryptographic commitment
             claimed: false,
-        });
+            mint,
+        };
 
-        // Log commitment memo (would be included in transaction in production)
+        await saveBet(newBet);
+
+
+        // Log commitment memo
         console.log(`[Commitment] ${createCommitmentMemo(commitment)}`);
     }
 
@@ -195,14 +151,19 @@ export const getBetStatus = async (
     marketId: string,
     wallet: string
 ): Promise<"pending" | "won" | "lost" | "none"> => {
-    const bet = getUserMarketBet(marketId, wallet);
+    const bet = await fetchUserMarketBet(marketId, wallet);
     if (!bet) return "none";
 
     try {
         const market = await fetchMarketFresh(marketId);
         if (market.status !== "closed") return "pending";
         if (!market.result) return "pending";
-        return bet.outcome === market.result ? "won" : "lost";
+
+        // Ensure result is yes/no
+        const resultFormatted = market.result.toLowerCase();
+        if (resultFormatted !== "yes" && resultFormatted !== "no") return "pending";
+
+        return bet.outcome === resultFormatted ? "won" : "lost";
     } catch {
         return "pending";
     }
@@ -212,30 +173,36 @@ export const getBetStatus = async (
  * Update stored bet statuses for a user
  */
 export const refreshBetStatuses = async (wallet: string): Promise<Bet[]> => {
-    const userBets = getUserBets(wallet);
+    const userBets = await fetchUserBets(wallet);
     const updatedBets: Bet[] = [];
 
     for (const bet of userBets) {
-        const status = await getBetStatus(bet.marketId, wallet);
-        // Skip 'none' status - this means the bet wasn't found (shouldn't happen)
-        if (status !== "none") {
-            updatedBets.push({ ...bet, status });
-        } else {
+        // Optimize: Only check pending bets
+        if (bet.status !== 'pending') {
+            updatedBets.push(bet);
+            continue;
+        }
+
+        try {
+            const market = await fetchMarketFresh(bet.marketId);
+            if (market.status === 'closed' && (market.result?.toLowerCase() === 'yes' || market.result?.toLowerCase() === 'no')) {
+                const newStatus = bet.outcome === market.result.toLowerCase() ? 'won' : 'lost';
+                await updateBetStatus(bet.tx, newStatus);
+                updatedBets.push({ ...bet, status: newStatus });
+            } else {
+                updatedBets.push(bet);
+            }
+        } catch (e) {
+            console.error(`Error refreshing status for bet ${bet.tx}:`, e);
             updatedBets.push(bet);
         }
     }
-
-    // Update localStorage
-    const allBets = getBets();
-    const otherBets = allBets.filter((b) => b.wallet !== wallet);
-    localStorage.setItem(BETS_KEY, JSON.stringify([...otherBets, ...updatedBets]));
 
     return updatedBets;
 };
 
 /**
  * Calculate potential payout for a bet
- * Payout = (user bet / total winning bets) * (losing pool * 0.98)
  */
 export const calculatePotentialPayout = (
     userBet: number,
@@ -250,7 +217,6 @@ export const calculatePotentialPayout = (
     const effectiveWinningPool = winningPool > 0 ? winningPool : 10;
 
     // If losing pool is empty (common in new multi-markets), imply a pool based on probability or equal weight
-    // For single yes/no, it's just the other side.
     const effectiveLosingPool = losingPool > 0 ? losingPool : (effectiveWinningPool);
 
     return calculateClaimAmount(userBet, effectiveWinningPool, effectiveLosingPool, PROTOCOL_FEE);
@@ -265,29 +231,14 @@ export const formatBetAmount = (amount: number): string => {
     return amount.toFixed(2);
 };
 
-/**
- * Clear all bets (for testing)
- */
+// Deprecated or testing functions - functionality moved to server actions (remove or stub)
 export const clearBets = () => {
-    if (typeof window !== "undefined") {
-        localStorage.removeItem(BETS_KEY);
-    }
-};
-
-/**
- * Mark a bet as claimed in localStorage
- */
-export const markBetClaimed = (tx: string): void => {
-    const bets = getBets();
-    const updated = bets.map(b =>
-        b.tx === tx ? { ...b, claimed: true } : b
-    );
-    localStorage.setItem(BETS_KEY, JSON.stringify(updated));
+    // No-op or call server? Server clear not implemented for safety.
+    console.warn("clearBets is not supported with server persistence");
 };
 
 /**
  * Claim winnings for a bet using ZK proof
- * Generates proof, verifies, and marks as claimed
  */
 export interface ClaimResult {
     success: boolean;
@@ -312,7 +263,7 @@ export const claimBet = async (
         marketResult
     );
 
-    // Verify the proof
+    // Verify the proof (Client side check)
     const verification = verifyClaimProof(proof, marketResult);
 
     if (!verification.valid) {
@@ -322,27 +273,29 @@ export const claimBet = async (
         };
     }
 
-    // Check if already claimed
+    // Check if already claimed (Server check)
     if (bet.claimed) {
-        return {
-            success: false,
-            error: "This bet has already been claimed",
-        };
+        return { success: false, error: "This bet has already been claimed" };
+    }
+
+    // Check nullifier on server
+    const isUsed = await checkNullifierUsed(proof.nullifier);
+    if (isUsed) {
+        return { success: false, error: "This bet has already been claimed (nullifier used)" };
     }
 
     // Calculate claim amount using Parimutuel logic (fetch current totals)
-    const totals = getMarketTotals(bet.marketId);
+    const totals = await fetchMarketTotals(bet.marketId);
     const winningPool = marketResult === "yes" ? totals.yes : totals.no;
     const losingPool = marketResult === "yes" ? totals.no : totals.yes;
 
-    // Note: totals include the user's bet in the winning pool
     const claimAmount = calculateClaimAmount(bet.amount, winningPool, losingPool, PROTOCOL_FEE);
 
-    // Mark nullifier as used (prevents double-claim)
-    markNullifierUsed(proof.nullifier);
+    // Mark nullifier as used
+    await markNullifierUsedServer(proof.nullifier);
 
     // Mark bet as claimed
-    markBetClaimed(bet.tx);
+    await updateBetStatus(bet.tx, "won", true);
 
     return {
         success: true,

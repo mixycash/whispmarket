@@ -5,11 +5,12 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import Header from "@/components/header";
 import Padder from "@/components/padder";
 import {
-    getUserBets,
+    fetchUserBets,
     Bet,
     refreshBetStatuses,
     claimBet,
-    ClaimResult
+    ClaimResult,
+    clearLostBets
 } from "@/lib/confidential-betting";
 import { fetchMarket } from "@/lib/jup-predict";
 import Link from "next/link";
@@ -31,12 +32,15 @@ export default function PortfolioPage() {
     const [claimResult, setClaimResult] = useState<{ tx: string; result: ClaimResult } | null>(null);
 
     useEffect(() => {
-        if (!publicKey) {
-            setBets([]);
-            return;
-        }
-        const userBets = getUserBets(publicKey.toBase58());
-        setBets(userBets.sort((a, b) => b.timestamp - a.timestamp));
+        const loadBets = async () => {
+            if (!publicKey) {
+                setBets([]);
+                return;
+            }
+            const userBets = await fetchUserBets(publicKey.toBase58());
+            setBets(userBets.sort((a, b) => b.timestamp - a.timestamp));
+        };
+        loadBets();
     }, [publicKey]);
 
     const handleRefresh = async () => {
@@ -49,6 +53,15 @@ export default function PortfolioPage() {
             console.error("Failed to refresh:", e);
         }
         setRefreshing(false);
+    };
+
+    const handleClearLost = async () => {
+        if (!publicKey) return;
+        if (confirm("Are you sure you want to clear all lost bets from your history?")) {
+            await clearLostBets(publicKey.toBase58());
+            const userBets = await fetchUserBets(publicKey.toBase58());
+            setBets(userBets.sort((a, b) => b.timestamp - a.timestamp));
+        }
     };
 
     const handleClaim = async (bet: Bet) => {
@@ -75,7 +88,7 @@ export default function PortfolioPage() {
 
             // Refresh bets list to show claimed status
             if (result.success && publicKey) {
-                const updated = getUserBets(publicKey.toBase58());
+                const updated = await fetchUserBets(publicKey.toBase58());
                 setBets(updated.sort((a, b) => b.timestamp - a.timestamp));
             }
         } catch (e) {
@@ -120,11 +133,29 @@ export default function PortfolioPage() {
                         <h1 className="page-title">Portfolio</h1>
                         <p className="page-subtitle">{bets.length} bet{bets.length !== 1 ? "s" : ""}</p>
                     </div>
-                    {connected && bets.length > 0 && (
-                        <button onClick={handleRefresh} disabled={refreshing} className="refresh-btn">
-                            {refreshing ? "⟳" : "↻"}
-                        </button>
-                    )}
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        {connected && bets.some(b => b.status === "lost") && (
+                            <button
+                                onClick={handleClearLost}
+                                style={{
+                                    backgroundColor: 'transparent',
+                                    border: '1px solid #444',
+                                    color: '#aaa',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem'
+                                }}
+                            >
+                                Clear Lost
+                            </button>
+                        )}
+                        {connected && bets.length > 0 && (
+                            <button onClick={handleRefresh} disabled={refreshing} className="refresh-btn">
+                                {refreshing ? "⟳" : "↻"}
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {!connected ? (
@@ -170,16 +201,6 @@ export default function PortfolioPage() {
                                     <div className="portfolio-card-date" style={{ color: '#888', fontSize: '0.9rem', marginBottom: '8px' }}>
                                         {formatDate(bet.timestamp)}
                                     </div>
-
-                                    {/* Commitment proof indicator */}
-                                    {bet.commitment && (
-                                        <div className="portfolio-card-commitment" style={{ marginBottom: '8px' }}>
-                                            <span className="commitment-badge" title={`Commitment: ${bet.commitment.commitmentHash.slice(0, 16)}...`}>
-                                                🔐 On-chain proof
-                                            </span>
-                                        </div>
-                                    )}
-
                                     {/* Claim button for winners */}
                                     {bet.status === "won" && !bet.claimed && (
                                         <button

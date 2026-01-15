@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { PredictEvent, Market, formatPrice, formatVolume, getCategoryColor } from "@/lib/jup-predict";
-import { placeBet, getUserMarketBet, getMarketTotals, calculatePotentialPayout } from "@/lib/confidential-betting";
+import { placeBet, fetchUserMarketBet, fetchMarketTotals, calculatePotentialPayout, Bet } from "@/lib/confidential-betting";
 import { fetchUserMint, fetchUserTokenAccount } from "@/utils/constants";
 
 interface MarketModalProps {
@@ -20,6 +20,10 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
     const [betResult, setBetResult] = useState<{ success: boolean; message: string } | null>(null);
     const [userMint, setUserMint] = useState<string | null>(null);
     const [hasTokens, setHasTokens] = useState(false);
+
+    // Async data states
+    const [totals, setTotals] = useState({ yes: 0, no: 0, total: 0 });
+    const [existingBet, setExistingBet] = useState<Bet | null | undefined>(null);
 
     const { publicKey, sendTransaction, connected } = useWallet();
     const { connection } = useConnection();
@@ -64,6 +68,36 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
         }
     }, [event]);
 
+    // Fetch Async Data (Totals and Existing Bet)
+    useEffect(() => {
+        if (!selectedMarket) {
+            setTotals({ yes: 0, no: 0, total: 0 });
+            setExistingBet(null);
+            return;
+        }
+
+        const loadData = async () => {
+            // Load totals
+            try {
+                const t = await fetchMarketTotals(selectedMarket.marketId);
+                setTotals(t);
+            } catch (e) {
+                console.error("Error fetching totals:", e);
+            }
+
+            // Load existing bet
+            if (publicKey) {
+                try {
+                    const b = await fetchUserMarketBet(selectedMarket.marketId, publicKey.toBase58());
+                    setExistingBet(b);
+                } catch (e) { console.error("Error fetching bet:", e); }
+            } else {
+                setExistingBet(null);
+            }
+        };
+        loadData();
+    }, [selectedMarket, publicKey]);
+
     // Filter relevant markets if event title implies a specific matchup (e.g. "Miami vs Indiana")
     const relevantMarkets = useMemo(() => {
         if (!event || !event.markets) return [];
@@ -103,8 +137,6 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
 
     if (!event) return null;
 
-    // Get current pool totals for Parimutuel calculations
-    const totals = selectedMarket ? getMarketTotals(selectedMarket.marketId) : { yes: 0, no: 0 };
     const totalPool = totals.yes + totals.no;
 
     // Calculate percentages for UI (default to 50/50 if empty)
@@ -134,11 +166,6 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
 
     const estYesOdds = getEstimatedOdds("yes");
     const estNoOdds = getEstimatedOdds("no");
-
-    // Check if user already bet on this market
-    const existingBet = publicKey && selectedMarket
-        ? getUserMarketBet(selectedMarket.marketId, publicKey.toBase58())
-        : null;
 
     const handleBet = async () => {
         if (!wallet || !selectedMarket || !betAmount || !publicKey || !userMint || !selectedOutcome) return;
@@ -177,6 +204,12 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                 });
                 setBetAmount("");
                 setSelectedOutcome(null);
+
+                // Refresh totals and bet status
+                const newTotals = await fetchMarketTotals(selectedMarket.marketId);
+                setTotals(newTotals);
+                const newBet = await fetchUserMarketBet(selectedMarket.marketId, publicKey.toBase58());
+                setExistingBet(newBet);
             } else {
                 setBetResult({
                     success: false,

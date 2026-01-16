@@ -231,30 +231,41 @@ export async function fetchEvents(params: FetchEventsParams = {}): Promise<Event
 const ALL_CATEGORIES: Category[] = ["crypto", "sports", "politics", "esports", "culture", "economics", "tech"];
 
 export async function fetchAllEvents(): Promise<PredictEvent[]> {
-    const allEvents: PredictEvent[] = [];
-
-    // Fetch 50 events from each category
-    for (const category of ALL_CATEGORIES) {
+    const promises = ALL_CATEGORIES.map(async (category) => {
         try {
-            const response = await fetchEvents({
-                includeMarkets: true,
-                category,
-                start: 0,
-                end: 50,
-                sortBy: "volume",
-                sortDirection: "desc",
-            });
-            allEvents.push(...response.data);
+            const [batch1, batch2] = await Promise.all([
+                fetchEvents({
+                    includeMarkets: true,
+                    category,
+                    start: 0,
+                    end: 99,
+                    sortBy: "volume",
+                    sortDirection: "desc",
+                }),
+                fetchEvents({
+                    includeMarkets: true,
+                    category,
+                    start: 100,
+                    end: 199,
+                    sortBy: "volume",
+                    sortDirection: "desc",
+                })
+            ]);
+            return [...batch1.data, ...batch2.data];
         } catch (e) {
             console.error(`Failed to fetch ${category} events:`, e);
+            return [];
         }
-    }
+    });
+
+    const results = await Promise.all(promises);
+    const allEvents = results.flat();
 
     console.log(`[Cache] Loaded ${allEvents.length} events across ${ALL_CATEGORIES.length} categories`);
     return allEvents;
 }
 
-// Search events from cache
+// Search events from cache (local/offline)
 export function searchEvents(query: string): PredictEvent[] {
     if (!query.trim()) return [];
     const q = query.toLowerCase();
@@ -277,6 +288,119 @@ export function searchEvents(query: string): PredictEvent[] {
             return true;
         })
     );
+}
+
+// Search events via API (server-side, better quality)
+export interface SearchEventsParams {
+    query: string;
+    limit?: number; // 1-20, default varies
+}
+
+export async function searchEventsAPI(params: SearchEventsParams): Promise<PredictEvent[]> {
+    if (!params.query.trim()) return [];
+
+    const searchParams = new URLSearchParams();
+    searchParams.set("query", params.query);
+    if (params.limit !== undefined) {
+        searchParams.set("limit", String(Math.min(20, Math.max(1, params.limit))));
+    }
+
+    const res = await fetch(`${API_BASE}/events/search?${searchParams.toString()}`, {
+        headers: { Accept: "*/*" }
+    });
+    if (!res.ok) throw new Error("Failed to search events");
+
+    const response: { data: PredictEvent[] } = await res.json();
+
+    // Cache results
+    for (const event of response.data) {
+        cacheEvent(event);
+    }
+    saveCache();
+
+    return response.data;
+}
+
+// Fetch a single event by ID
+export async function fetchEvent(eventId: string, includeMarkets: boolean = true): Promise<PredictEvent> {
+    const searchParams = new URLSearchParams();
+    if (includeMarkets) {
+        searchParams.set("includeMarkets", "true");
+    }
+
+    const res = await fetch(`${API_BASE}/events/${eventId}?${searchParams.toString()}`);
+    if (!res.ok) {
+        if (res.status === 404) throw new Error(`Event not found: ${eventId}`);
+        throw new Error("Failed to fetch event");
+    }
+
+    const event: PredictEvent = await res.json();
+    cacheEvent(event);
+    saveCache();
+
+    return event;
+}
+
+// Fetch suggested events for a user based on their order activity
+export async function fetchSuggestedEvents(pubkey: string): Promise<PredictEvent[]> {
+    const res = await fetch(`${API_BASE}/events/suggested/${pubkey}`);
+    if (!res.ok) throw new Error("Failed to fetch suggested events");
+
+    const response: { data: PredictEvent[] } = await res.json();
+
+    // Cache results
+    for (const event of response.data) {
+        cacheEvent(event);
+    }
+    saveCache();
+
+    return response.data;
+}
+
+// Fetch markets for an event with pagination
+export interface FetchEventMarketsParams {
+    eventId: string;
+    start?: number;
+    end?: number;
+}
+
+export interface EventMarketsResponse {
+    data: Market[];
+    pagination: PaginationInfo;
+}
+
+export async function fetchEventMarkets(params: FetchEventMarketsParams): Promise<EventMarketsResponse> {
+    const searchParams = new URLSearchParams();
+    if (params.start !== undefined) searchParams.set("start", String(params.start));
+    if (params.end !== undefined) searchParams.set("end", String(params.end));
+
+    const res = await fetch(`${API_BASE}/events/${params.eventId}/markets?${searchParams.toString()}`);
+    if (!res.ok) throw new Error("Failed to fetch event markets");
+
+    const response: EventMarketsResponse = await res.json();
+
+    // Cache markets
+    for (const market of response.data) {
+        memoryCache.markets.set(market.marketId, market);
+    }
+    saveCache();
+
+    return response;
+}
+
+// Fetch a specific market within an event
+export async function fetchEventMarket(eventId: string, marketId: string): Promise<Market> {
+    const res = await fetch(`${API_BASE}/events/${eventId}/markets/${marketId}`);
+    if (!res.ok) {
+        if (res.status === 404) throw new Error(`Market not found: ${marketId}`);
+        throw new Error("Failed to fetch market");
+    }
+
+    const market: Market = await res.json();
+    memoryCache.markets.set(marketId, market);
+    saveCache();
+
+    return market;
 }
 
 // Fetch a single market with caching

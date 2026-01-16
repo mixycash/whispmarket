@@ -141,7 +141,7 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
       <div className="flex items-center gap-10">
         <Link href="/" className="hover:opacity-80 transition-opacity">
           <div className="flex items-center gap-2">
-            <span className="font-[family-name:var(--font-space)] font-bold text-2xl text-white tracking-tight">WHISPI</span>
+            <span className="font-[family-name:var(--font-outfit)] font-extrabold text-2xl tracking-tight" style={{ color: '#e8f4fc' }}>WHISPI</span>
           </div>
         </Link>
 

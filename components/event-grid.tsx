@@ -36,6 +36,7 @@ export default function EventGrid() {
     const [status, setStatus] = useState<StatusOption>("active");
     const [selectedEvent, setSelectedEvent] = useState<PredictEvent | null>(null);
     const [cacheLoaded, setCacheLoaded] = useState(false);
+    const [visibleCount, setVisibleCount] = useState(50);
 
     // Background fetch all categories on app load for settlement cache
     useEffect(() => {
@@ -53,6 +54,7 @@ export default function EventGrid() {
     const loadEvents = useCallback(async () => {
         setLoading(true);
         setError(null);
+        setVisibleCount(50); // Reset visible count on filter change
         try {
             // Determine API params based on sort selection
             let apiSortBy: "volume" | "beginAt" = "volume";
@@ -61,20 +63,30 @@ export default function EventGrid() {
                 apiSortBy = "beginAt";
             }
 
-            // Fetch 50 events for display
-            // For "ending_soon", we rely on client-side sort mainly, but fetching by volume or beginAt 
-            // is a decent default. API doesn't have "ending soon" sort natively usually.
-            const response = await fetchEvents({
-                includeMarkets: true,
-                category,
-                sortBy: apiSortBy,
-                sortDirection: sortDirection,
-                start: 0,
-                end: 50,
-            });
+            // Fetch 200 events in 2 batches of 100 to avoid API limits
+            const [batch1, batch2] = await Promise.all([
+                fetchEvents({
+                    includeMarkets: true,
+                    category,
+                    sortBy: apiSortBy,
+                    sortDirection: sortDirection,
+                    start: 0,
+                    end: 100,
+                }),
+                fetchEvents({
+                    includeMarkets: true,
+                    category,
+                    sortBy: apiSortBy,
+                    sortDirection: sortDirection,
+                    start: 100,
+                    end: 200,
+                })
+            ]);
+
+            const allEvents = [...batch1.data, ...batch2.data];
 
             // Filter events based on status (Active vs Resolved)
-            let filteredEvents = response.data.filter(event => {
+            let filteredEvents = allEvents.filter(event => {
                 const hasOpenMarkets = event.markets?.some(m => m.status === "open");
                 const isTotallyClosed = !event.isActive || (event.markets && event.markets.every(m => m.status !== "open"));
 
@@ -149,7 +161,7 @@ export default function EventGrid() {
                     });
                 }
 
-                setEvents(filtered.slice(0, 50));
+                setEvents(filtered.slice(0, 200));
                 setError("Using cached data");
             } else {
                 setError("Failed to load markets");
@@ -357,6 +369,30 @@ export default function EventGrid() {
                     color: var(--foreground);
                     box-shadow: 0 1px 2px rgba(0,0,0,0.1);
                 }
+
+                .load-more-container {
+                    display: flex;
+                    justify-content: center;
+                    margin-top: 2rem;
+                    width: 100%;
+                }
+
+                .load-more-btn {
+                    background: var(--surface);
+                    border: 1px solid var(--border-subtle);
+                    color: var(--foreground);
+                    padding: 0.75rem 2rem;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+
+                .load-more-btn:hover {
+                    background: var(--surface-hover);
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                }
             `}</style>
 
             {/* Loading state */}
@@ -379,13 +415,24 @@ export default function EventGrid() {
             {/* Events grid */}
             {!loading && (
                 <div className="events-grid">
-                    {events.map(event => (
+                    {events.slice(0, visibleCount).map(event => (
                         <EventCard
                             key={event.eventId}
                             event={event}
                             onClick={() => setSelectedEvent(event)}
                         />
                     ))}
+
+                    {events.length > visibleCount && (
+                        <div className="load-more-container">
+                            <button
+                                className="load-more-btn"
+                                onClick={() => setVisibleCount(prev => prev + 50)}
+                            >
+                                Load More
+                            </button>
+                        </div>
+                    )}
 
                     {events.length === 0 && !error && (
                         <div className="empty-state">

@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { PredictEvent, Market, formatPrice, formatVolume, getCategoryColor } from "@/lib/jup-predict";
 import { placeBet, fetchUserMarketBet, fetchMarketTotals, calculatePotentialPayout, Bet } from "@/lib/confidential-betting";
+import { useCrypto } from "@/app/providers/CryptoProvider";
 import { fetchUserTokenAccount } from "@/utils/constants";
 import { PROTOCOL_INCO_MINT } from "@/lib/protocol";
 
@@ -24,13 +25,18 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
     // Async data states
     const [totals, setTotals] = useState({ yes: 0, no: 0, total: 0 });
     const [existingBet, setExistingBet] = useState<Bet | null | undefined>(null);
+    const [showMarketInfo, setShowMarketInfo] = useState(false);
+
+    // Solana icon URL
+    const solanaIconUrl = "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png";
 
     // Get display unit
     const unit = "wSOL";
 
-    const { publicKey, sendTransaction, connected } = useWallet();
+    const { publicKey, sendTransaction, connected, signMessage } = useWallet();
     const { connection } = useConnection();
     const wallet = useAnchorWallet();
+    const { cryptoKey, deriveSessionKey } = useCrypto();
 
     // Track if we've already fetched token account for this wallet/session
     const tokenFetchedRef = useRef<string | null>(null);
@@ -253,6 +259,17 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                 ? (selectedMarket.metadata?.title || undefined)
                 : undefined;
 
+            // Ensure session key is ready (derive if needed)
+            let sessionKey = cryptoKey;
+            if (!sessionKey && publicKey && signMessage) {
+                try {
+                    // This prompts signature if not cached
+                    sessionKey = await deriveSessionKey(publicKey.toBase58(), signMessage);
+                } catch (e) {
+                    console.warn("Could not derive session key, bet will be unencrypted:", e);
+                }
+            }
+
             const result = await placeBet(
                 connection,
                 wallet,
@@ -265,8 +282,9 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                 currentOdds,
                 payout,
                 event.metadata?.imageUrl,
-                undefined,  // signMessage - not used for now
-                teamName    // Team name for multi-outcome markets
+                undefined,  // signMessage - we handle key derivation above
+                teamName,   // Team name for multi-outcome markets
+                sessionKey  // Pass the derived session key
             );
 
             if (result.success) {
@@ -540,13 +558,13 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                                 <div className="bet-amount-section">
                                     <label className="bet-input-label">
                                         {isMultiTeamEvent
-                                            ? `2. Enter Wager (${unit})`
-                                            : `2. Bet Amount in ${unit}`}
+                                            ? "2. Enter Wager"
+                                            : "2. Bet Amount"}
                                     </label>
-                                    <div style={{ position: 'relative' }}>
+                                    <div className="wager-input-wrapper">
                                         <input
                                             type="number"
-                                            placeholder={`Enter ${unit.toLowerCase()}...`}
+                                            placeholder="0.00"
                                             value={betAmount}
                                             onChange={(e) => {
                                                 setBetAmount(e.target.value);
@@ -556,41 +574,43 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                                             className="bet-input"
                                             step="0.01"
                                             min="0"
-                                            style={{ paddingRight: '50px' }}
                                         />
-                                        <span style={{
-                                            position: 'absolute',
-                                            right: '12px',
-                                            top: '50%',
-                                            transform: 'translateY(-50%)',
-                                            color: 'var(--muted)',
-                                            fontSize: '0.85rem',
-                                            fontWeight: 500
-                                        }}>
-                                            ◎
-                                        </span>
+                                        <div className="wager-unit">
+                                            <img
+                                                src={solanaIconUrl}
+                                                alt="SOL"
+                                                className="sol-icon-input"
+                                            />
+                                            <span>SOL</span>
+                                        </div>
                                     </div>
 
                                     {/* Live payout calculation */}
                                     {potentialPayout > 0 && (
                                         <div className={`potential-payout ${selectedOutcome}`}>
                                             <div className="payout-row">
-                                                <span>Your wager:</span>
-                                                <strong>🔒 {parseFloat(betAmount).toFixed(2)} {unit}</strong>
+                                                <span>Wager</span>
+                                                <strong className="payout-amount">
+                                                    <img src={solanaIconUrl} alt="" className="sol-icon-tiny" />
+                                                    {parseFloat(betAmount).toFixed(2)}
+                                                </strong>
                                             </div>
-                                            <div className="payout-row">
+                                            <div className="payout-row payout-highlight">
                                                 <span>
                                                     If {isMultiTeamEvent && selectedMarket
                                                         ? (selectedMarket.metadata?.title || 'selection')
-                                                        : selectedOutcome.toUpperCase()} wins:
+                                                        : selectedOutcome.toUpperCase()} wins
                                                 </span>
-                                                <strong>{potentialPayout.toFixed(2)} {unit}</strong>
+                                                <strong className="payout-amount">
+                                                    <img src={solanaIconUrl} alt="" className="sol-icon-tiny" />
+                                                    {potentialPayout.toFixed(2)}
+                                                </strong>
                                             </div>
                                             <div className="payout-multiplier">
                                                 {isMultiTeamEvent && selectedMarket
                                                     ? getMarketOdds(selectedMarket).odds.toFixed(2)
                                                     : (selectedOutcome === "yes" ? estYesOdds.toFixed(2) : estNoOdds.toFixed(2))
-                                                }x potential return
+                                                }x return
                                             </div>
                                         </div>
                                     )}
@@ -633,38 +653,59 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                     <p className="modal-disclaimer">You can only bet once per market</p>
                 )}
 
-                {/* Rules & Info */}
+                {/* Market Info - Collapsible */}
                 <div className="modal-rules">
-                    <h4>Market Info</h4>
-                    {selectedMarket?.metadata?.description && (
-                        <p className="description" style={{ marginBottom: '12px' }}>{selectedMarket.metadata.description}</p>
-                    )}
+                    <button
+                        className="market-info-toggle"
+                        onClick={() => setShowMarketInfo(!showMarketInfo)}
+                    >
+                        <span>Market Info</span>
+                        <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            style={{ transform: showMarketInfo ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+                        >
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
 
-                    <div className="dates-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px', fontSize: '0.75rem', color: 'var(--muted)' }}>
-                        {selectedMarket?.openTime && (
-                            <div>
-                                <span style={{ display: 'block', fontWeight: 600 }}>Opened</span>
-                                {new Date(selectedMarket.openTime * 1000).toLocaleString()}
-                            </div>
-                        )}
-                        {selectedMarket?.closeTime && (
-                            <div>
-                                <span style={{ display: 'block', fontWeight: 600 }}>Closes</span>
-                                {new Date(selectedMarket.closeTime * 1000).toLocaleString()}
-                            </div>
-                        )}
-                    </div>
+                    {showMarketInfo && (
+                        <div className="market-info-content">
+                            {selectedMarket?.metadata?.description && (
+                                <p className="description">{selectedMarket.metadata.description}</p>
+                            )}
 
-                    {selectedMarket?.metadata?.rulesPrimary && (
-                        <div style={{ marginBottom: '12px' }}>
-                            <h5 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '4px' }}>Resolution Rules</h5>
-                            <p>{selectedMarket.metadata.rulesPrimary}</p>
-                        </div>
-                    )}
-                    {selectedMarket?.metadata?.rulesSecondary && (
-                        <div>
-                            <h5 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '4px' }}>Additional Terms</h5>
-                            <p>{selectedMarket.metadata.rulesSecondary}</p>
+                            <div className="dates-grid">
+                                {selectedMarket?.openTime && (
+                                    <div>
+                                        <span className="dates-label">Opened</span>
+                                        {new Date(selectedMarket.openTime * 1000).toLocaleString()}
+                                    </div>
+                                )}
+                                {selectedMarket?.closeTime && (
+                                    <div>
+                                        <span className="dates-label">Closes</span>
+                                        {new Date(selectedMarket.closeTime * 1000).toLocaleString()}
+                                    </div>
+                                )}
+                            </div>
+
+                            {selectedMarket?.metadata?.rulesPrimary && (
+                                <div className="rules-section">
+                                    <h5>Resolution Rules</h5>
+                                    <p>{selectedMarket.metadata.rulesPrimary}</p>
+                                </div>
+                            )}
+                            {selectedMarket?.metadata?.rulesSecondary && (
+                                <div className="rules-section">
+                                    <h5>Additional Terms</h5>
+                                    <p>{selectedMarket.metadata.rulesSecondary}</p>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

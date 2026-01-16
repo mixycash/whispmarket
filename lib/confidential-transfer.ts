@@ -94,51 +94,85 @@ export const transferConfidentialTokens = async (
         const encryptedHex = await encryptAmount(amount);
         const ciphertext = hexToBuffer(encryptedHex);
 
-        // 4. Build transaction for simulation
-        const simTx = await program.methods
-            .transfer(ciphertext, 0)
-            .accounts({
-                source: sourceAccount.pubkey,
-                destination: destinationTokenAccount,
-                authority: wallet.publicKey,
-                incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
-                systemProgram: SystemProgram.programId,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any)
-            .transaction();
+        let sourceHandle: bigint = BigInt(0);
+        let destHandle: bigint = BigInt(0);
 
-        simTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-        simTx.feePayer = wallet.publicKey;
+        // Try to load handles from cache
+        const sourceHandleKey = `inco_handle_${sourceAccount.pubkey.toBase58()}`;
+        const destHandleKey = `inco_handle_${destinationTokenAccount.toBase58()}`;
 
-        // 5. Simulate with both accounts to get handles from post-state
-        const sim = await connection.simulateTransaction(simTx, undefined, [
-            sourceAccount.pubkey,
-            destinationTokenAccount,
-        ]);
+        let cachedSource: string | null = null;
+        let cachedDest: string | null = null;
 
-        if (sim.value.err) {
-            console.warn("Simulation warning:", sim.value.err);
+        if (typeof window !== "undefined") {
+            cachedSource = localStorage.getItem(sourceHandleKey);
+            cachedDest = localStorage.getItem(destHandleKey);
         }
 
-        // 6. Extract handles from simulation results
-        const simAccounts = sim.value.accounts;
-        if (!simAccounts || simAccounts.length < 2) {
-            throw new Error("Simulation did not return expected account data");
+        if (cachedSource && cachedDest) {
+            try {
+                sourceHandle = BigInt(cachedSource);
+                destHandle = BigInt(cachedDest);
+            } catch (e) {
+                // If parsing fails, force simulation
+                cachedSource = null;
+                // Fallthrough to simulation
+            }
         }
 
-        const sourceData = simAccounts[0]?.data;
-        const destData = simAccounts[1]?.data;
+        if (!cachedSource || !cachedDest) {
+            // 4. Build transaction for simulation
+            const simTx = await program.methods
+                .transfer(ciphertext, 0)
+                .accounts({
+                    source: sourceAccount.pubkey,
+                    destination: destinationTokenAccount,
+                    authority: wallet.publicKey,
+                    incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any)
+                .transaction();
 
-        if (!sourceData || !destData) {
-            throw new Error("Missing account data from simulation");
+            simTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+            simTx.feePayer = wallet.publicKey;
+
+            // 5. Simulate with both accounts to get handles from post-state
+            const sim = await connection.simulateTransaction(simTx, undefined, [
+                sourceAccount.pubkey,
+                destinationTokenAccount,
+            ]);
+
+            if (sim.value.err) {
+                console.warn("Simulation warning:", sim.value.err);
+            }
+
+            // 6. Extract handles from simulation results
+            const simAccounts = sim.value.accounts;
+            if (!simAccounts || simAccounts.length < 2) {
+                throw new Error("Simulation did not return expected account data");
+            }
+
+            const sourceData = simAccounts[0]?.data;
+            const destData = simAccounts[1]?.data;
+
+            if (!sourceData || !destData) {
+                throw new Error("Missing account data from simulation");
+            }
+
+            // Decode base64 data and extract handles
+            const sourceBuffer = Buffer.from(sourceData[0], "base64");
+            const destBuffer = Buffer.from(destData[0], "base64");
+
+            sourceHandle = extractHandle(sourceBuffer);
+            destHandle = extractHandle(destBuffer);
+
+            // Cache for future
+            if (typeof window !== "undefined") {
+                localStorage.setItem(sourceHandleKey, sourceHandle.toString());
+                localStorage.setItem(destHandleKey, destHandle.toString());
+            }
         }
-
-        // Decode base64 data and extract handles
-        const sourceBuffer = Buffer.from(sourceData[0], "base64");
-        const destBuffer = Buffer.from(destData[0], "base64");
-
-        const sourceHandle = extractHandle(sourceBuffer);
-        const destHandle = extractHandle(destBuffer);
 
         // 7. Derive allowance PDAs using simulated handles
         const [sourceAllowancePda] = getAllowancePda(sourceHandle, wallet.publicKey);

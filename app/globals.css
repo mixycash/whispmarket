@@ -3,25 +3,32 @@
 :root {
   /* Lighter blue-gray background theme */
   --background: #1d2b3a;
-  --foreground: #f2f2f2;
+  --foreground: #f4f4f5;
   --surface: #2f3f50;
   --surface-hover: #3d5266;
   --border: #4d657c;
   --border-subtle: #3d5266;
 
-  /* Brand colors */
+  /* Brand colors - refined with subtle gradient support */
   --accent: #2c9cdb;
   --accent-hover: #56afe2;
+  --accent-gradient: linear-gradient(135deg, #2c9cdb 0%, #56afe2 100%);
 
-  /* Status colors */
-  --success: #43c773;
-  --success-bg: rgba(67, 199, 115, 0.15);
-  --danger: #e13737;
-  --danger-bg: rgba(225, 55, 55, 0.15);
+  /* Status colors - refined palette */
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.12);
+  --danger: #f43f5e;
+  --danger-bg: rgba(244, 63, 94, 0.12);
 
-  /* Text */
-  --muted: #899cb2;
-  --text-secondary: #a9b9ca;
+  /* Outcome-specific colors */
+  --outcome-yes: #10b981;
+  --outcome-yes-bg: rgba(16, 185, 129, 0.1);
+  --outcome-no: #f43f5e;
+  --outcome-no-bg: rgba(244, 63, 94, 0.1);
+
+  /* Text - improved contrast for accessibility */
+  --muted: #9fb3c8;
+  --text-secondary: #bdc9d8;
 
   /* Sizing */
   --radius: 0.6rem;
@@ -35,6 +42,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-urbanist), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-display: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -257,37 +265,37 @@ button {
 }
 
 /* ============================
-   Event Card - Compact Design
+   Event Card - Minimal Design
    ============================ */
 
 .event-card {
   background: var(--surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  padding: 1rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 1rem 1.125rem;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 1rem;
-  min-height: 160px;
+  gap: 0.875rem;
+  min-height: 150px;
   position: relative;
   overflow: hidden;
 }
 
 .event-card:hover {
   background: var(--surface-hover);
-  border-color: var(--border);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-card-hover);
+  border-color: var(--border-subtle);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.2);
 }
 
 /* Card Header */
 .card-header {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .card-title-group {
@@ -298,12 +306,11 @@ button {
 
 .card-image-container {
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  border-radius: 6px;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--background);
-  border: 1px solid var(--border-subtle);
 }
 
 .card-image {
@@ -313,15 +320,16 @@ button {
 }
 
 .card-title {
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--foreground);
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .live-dot {
@@ -329,11 +337,11 @@ button {
   /* Hidden for now as not in JSX */
 }
 
-/* Outcomes Section */
+/* Outcomes Section - Minimal with distinct colors */
 .card-outcomes {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 6px;
   margin-top: auto;
 }
 
@@ -341,75 +349,69 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.25rem 0;
+  padding: 0.5rem 0.625rem;
+  border-radius: 8px;
   position: relative;
+  transition: background 0.15s ease;
 }
 
-/* Add a subtle bar background for outcomes if desired, or keep it simple */
-.outcome-row::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 0%;
-  background: currentColor;
-  opacity: 0.1;
-  border-radius: 4px;
-  z-index: 0;
-  transition: width 0.3s ease;
+.outcome-row:first-child {
+  background: var(--outcome-yes-bg);
+}
+
+.outcome-row:last-child {
+  background: var(--outcome-no-bg);
 }
 
 .outcome-label {
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--foreground);
   z-index: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 70%;
+  max-width: 65%;
 }
 
 .outcome-value {
   font-size: 0.875rem;
   font-weight: 700;
   z-index: 1;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
 }
 
 .outcome-value.yes {
-  color: var(--success);
+  color: var(--outcome-yes);
 }
 
 .outcome-value.no {
-  color: var(--danger);
+  color: var(--outcome-no);
 }
 
-/* Card Footer */
+/* Card Footer - Minimal */
 .card-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 0.5rem;
+  padding-top: 0.625rem;
+  margin-top: 0.25rem;
+  opacity: 0.7;
 }
 
 .card-volume {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--muted);
 }
 
 .card-category {
-  font-size: 0.6875rem;
-  font-weight: 700;
+  font-size: 0.625rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.05);
-  padding: 2px 6px;
-  border-radius: 4px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 
 /* ============================
@@ -491,21 +493,41 @@ button {
 
 .modal-content {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
   width: 100%;
-  max-width: 520px;
+  max-width: 480px;
   max-height: 90vh;
   overflow-y: auto;
-  padding: 1.5rem;
+  padding: 1.75rem;
   position: relative;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.4);
   animation: slideUp 0.25s ease;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+}
+
+.modal-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 12px 0;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 3px;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+  background: var(--border);
 }
 
 @keyframes slideUp {
   from {
-    transform: translateY(20px);
+    transform: translateY(16px);
     opacity: 0;
   }
 
@@ -517,31 +539,30 @@ button {
 
 .modal-close {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
-  width: 32px;
-  height: 32px;
+  top: 1.25rem;
+  right: 1.25rem;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border: none;
+  border-radius: 6px;
   color: var(--muted);
-  font-size: 1.25rem;
+  font-size: 1.125rem;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
   z-index: 10;
 }
 
 .modal-close:hover {
-  background: var(--surface-hover);
+  background: var(--background);
   color: var(--foreground);
-  border-color: var(--border);
 }
 
 .modal-header {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .modal-title-group {
@@ -688,35 +709,35 @@ button {
 .modal-probability {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 
 .probability-bar {
-  height: 8px;
-  background: var(--danger);
+  height: 6px;
+  background: var(--outcome-no);
   border-radius: 999px;
   overflow: hidden;
 }
 
 .probability-fill {
   height: 100%;
-  background: var(--success);
+  background: var(--outcome-yes);
   transition: width 0.3s ease;
 }
 
 .probability-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .probability-labels .yes {
-  color: var(--success);
+  color: var(--outcome-yes);
 }
 
 .probability-labels .no {
-  color: var(--danger);
+  color: var(--outcome-no);
 }
 
 /* Stats */
@@ -798,23 +819,79 @@ button {
   margin-bottom: 1.5rem;
 }
 
-/* Rules */
+/* Market Info - Collapsible */
 .modal-rules {
-  padding-top: 1rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
   border-top: 1px solid var(--border-subtle);
 }
 
-.modal-rules h4 {
-  font-size: 0.75rem;
+.market-info-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.5rem 0;
+  background: transparent;
+  border: none;
   color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
   text-transform: uppercase;
-  margin-bottom: 0.5rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 0.15s;
 }
 
-.modal-rules p {
-  font-size: 0.8125rem;
+.market-info-toggle:hover {
   color: var(--foreground);
+}
+
+.market-info-content {
+  animation: fadeSlideIn 0.2s ease;
+  padding-top: 0.5rem;
+}
+
+.modal-rules .description {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
   line-height: 1.5;
+  margin-bottom: 0.75rem;
+}
+
+.dates-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+
+.dates-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.rules-section {
+  margin-bottom: 0.75rem;
+}
+
+.rules-section h5 {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 4px 0;
+  letter-spacing: 0.04em;
+}
+
+.rules-section p {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
 }
 
 /* ============================
@@ -851,38 +928,76 @@ button {
 
 .bet-input-label {
   display: block;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
-  margin-bottom: 0.5rem;
-  letter-spacing: 0.03em;
+  margin-bottom: 0.375rem;
+  letter-spacing: 0.04em;
+}
+
+.wager-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.wager-input-wrapper .bet-input {
+  padding-right: 72px;
+}
+
+.wager-unit {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.sol-icon-input {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.sol-icon-tiny {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 2px;
 }
 
 .bet-input {
   width: 100%;
-  padding: 0.875rem 1rem;
-  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
   background: var(--background);
   color: var(--foreground);
   font-size: 1rem;
-  font-weight: 500;
-  transition: all 0.2s;
+  font-weight: 600;
+  transition: all 0.15s;
 }
 
 .bet-input::placeholder {
   color: var(--muted);
+  font-weight: 400;
 }
 
 .bet-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(44, 156, 219, 0.15);
+  background: var(--surface);
 }
 
 .bet-input:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -897,6 +1012,15 @@ button {
 
 .potential-payout strong {
   font-weight: 700;
+}
+
+.payout-amount {
+  display: flex;
+  align-items: center;
+}
+
+.payout-highlight {
+  font-weight: 600;
 }
 
 /* Pool info */
@@ -996,7 +1120,7 @@ button {
 .outcome-selector {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+  gap: 0.625rem;
   margin-bottom: 1rem;
 }
 
@@ -1004,58 +1128,58 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.375rem;
-  padding: 1rem;
-  border: 2px solid var(--border);
+  gap: 0.25rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: var(--background);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
 }
 
 .outcome-btn:hover:not(:disabled) {
-  border-color: var(--border-subtle);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .outcome-btn.yes:hover:not(:disabled),
 .outcome-btn.yes.selected {
-  border-color: var(--success);
-  background: var(--success-bg);
+  border-color: var(--outcome-yes);
+  background: var(--outcome-yes-bg);
 }
 
 .outcome-btn.no:hover:not(:disabled),
 .outcome-btn.no.selected {
-  border-color: var(--danger);
-  background: var(--danger-bg);
+  border-color: var(--outcome-no);
+  background: var(--outcome-no-bg);
 }
 
 .outcome-btn.selected {
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .outcome-btn .outcome-label {
-  font-size: 1.125rem;
+  font-size: 0.875rem;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .outcome-btn.yes .outcome-label {
-  color: var(--success);
+  color: var(--outcome-yes);
 }
 
 .outcome-btn.no .outcome-label {
-  color: var(--danger);
+  color: var(--outcome-no);
 }
 
 .outcome-btn .outcome-odds {
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 800;
   color: var(--foreground);
 }
 
 .outcome-btn .outcome-price {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 
@@ -1065,13 +1189,13 @@ button {
 }
 
 .bet-amount-section {
-  animation: fadeSlideIn 0.3s ease;
+  animation: fadeSlideIn 0.25s ease;
 }
 
 @keyframes fadeSlideIn {
   from {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-8px);
   }
 
   to {
@@ -1081,21 +1205,21 @@ button {
 }
 
 .potential-payout {
-  margin-top: 0.75rem;
-  padding: 1rem;
+  margin-top: 0.625rem;
+  padding: 0.875rem;
   background: var(--background);
   border-radius: 10px;
   border: 1px solid var(--border-subtle);
 }
 
 .potential-payout.yes {
-  border-color: var(--success);
-  background: var(--success-bg);
+  border-color: var(--outcome-yes);
+  background: var(--outcome-yes-bg);
 }
 
 .potential-payout.no {
-  border-color: var(--danger);
-  background: var(--danger-bg);
+  border-color: var(--outcome-no);
+  background: var(--outcome-no-bg);
 }
 
 .payout-row {
@@ -1131,36 +1255,36 @@ button {
 
 .btn-place-bet {
   width: 100%;
-  margin-top: 1rem;
-  padding: 1rem;
+  margin-top: 0.875rem;
+  padding: 0.875rem;
   border: none;
-  border-radius: 12px;
-  font-size: 1rem;
-  font-weight: 700;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
 }
 
 .btn-place-bet.yes {
-  background: var(--success);
+  background: var(--outcome-yes);
   color: white;
 }
 
 .btn-place-bet.yes:hover:not(:disabled) {
-  background: #0ea472;
+  background: #059669;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
 }
 
 .btn-place-bet.no {
-  background: var(--danger);
+  background: var(--outcome-no);
   color: white;
 }
 
 .btn-place-bet.no:hover:not(:disabled) {
-  background: #dc2626;
+  background: #e11d48;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(225, 55, 55, 0.3);
+  box-shadow: 0 4px 12px rgba(244, 63, 94, 0.25);
 }
 
 .btn-place-bet:disabled {
@@ -1171,26 +1295,26 @@ button {
 }
 
 /* ============================
-   Team Selection List (Sports Betting - Compact)
+   Team Selection List (Sports Betting - Minimal)
    ============================ */
 
 .team-selection {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
 }
 
 .team-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 280px;
+  gap: 6px;
+  max-height: 260px;
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: var(--border-subtle) transparent;
 }
 
 .team-list::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
 }
 
 .team-list::-webkit-scrollbar-track {
@@ -1198,8 +1322,8 @@ button {
 }
 
 .team-list::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+  background: var(--border-subtle);
+  border-radius: 2px;
 }
 
 .team-row {
@@ -1213,37 +1337,36 @@ button {
   /* Custom styles */
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 0.875rem;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
   background: var(--background);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
   text-align: left;
   width: 100%;
   color: var(--foreground);
 }
 
 .team-row:hover:not(:disabled):not(.disabled) {
-  border-color: var(--accent);
-  background: rgba(44, 156, 219, 0.08);
+  border-color: var(--outcome-yes);
+  background: var(--outcome-yes-bg);
 }
 
 .team-row.selected {
-  border-color: var(--accent);
-  background: rgba(44, 156, 219, 0.15);
-  box-shadow: 0 0 0 1px var(--accent);
+  border-color: var(--outcome-yes);
+  background: var(--outcome-yes-bg);
 }
 
 .team-row.disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .team-row-name {
   flex: 1;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--foreground);
   white-space: nowrap;
@@ -1252,21 +1375,21 @@ button {
 }
 
 .team-row-prob {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  color: var(--accent);
-  min-width: 40px;
+  color: var(--muted);
+  min-width: 36px;
   text-align: right;
 }
 
 .team-row-odds {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--success);
-  background: var(--success-bg);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--outcome-yes);
+  background: var(--outcome-yes-bg);
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
-  min-width: 50px;
+  min-width: 44px;
   text-align: center;
 }
 

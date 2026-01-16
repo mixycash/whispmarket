@@ -101,7 +101,8 @@ export const placeBet = async (
     potentialPayout?: number,
     imageUrl?: string,
     signMessage?: (message: Uint8Array) => Promise<Uint8Array>,
-    teamName?: string  // Team/selection name for multi-outcome markets
+    teamName?: string,  // Team/selection name for multi-outcome markets
+    cryptoKey?: CryptoKey | null // Pre-derived session key
 ): Promise<TransferResult> => {
     // Validate
     if (amount <= 0) {
@@ -139,20 +140,29 @@ export const placeBet = async (
         let encryptedData: EncryptedBetData | undefined;
         let isEncrypted = false;
 
-        if (signMessage) {
+        // Encrypt bet details if key is available or can be derived
+        let key = cryptoKey;
+
+        // If no pre-derived key but we have signMessage, try to derive/cache it
+        if (!key && signMessage) {
             try {
-                const key = await getCachedOrDeriveKey(walletAddress, signMessage);
-                if (key) {
-                    const betData: DecryptedBetData = {
-                        amount,
-                        outcome,
-                        odds,
-                        potentialPayout,
-                    };
-                    encryptedData = await encryptBetData(betData, key);
-                    isEncrypted = true;
-                    console.log(`[Encryption] Bet data encrypted successfully`);
-                }
+                key = await getCachedOrDeriveKey(walletAddress, signMessage);
+            } catch (e) {
+                console.warn("Failed to derive key from signature:", e);
+            }
+        }
+
+        if (key) {
+            try {
+                const betData: DecryptedBetData = {
+                    amount,
+                    outcome,
+                    odds,
+                    potentialPayout,
+                };
+                encryptedData = await encryptBetData(betData, key);
+                isEncrypted = true;
+                console.log(`[Encryption] Bet data encrypted successfully`);
             } catch (e) {
                 console.warn("Failed to encrypt bet data, storing plaintext:", e);
             }

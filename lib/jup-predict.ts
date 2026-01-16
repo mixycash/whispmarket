@@ -112,36 +112,40 @@ let memoryCache: CacheData = {
     lastUpdated: 0,
 };
 
-// Load cache from localStorage
+// Load cache from localStorage (lightweight index only)
 function loadCache(): void {
     if (typeof window === "undefined") return;
     try {
         const stored = localStorage.getItem(CACHE_KEY);
         if (stored) {
             const parsed = JSON.parse(stored);
-            memoryCache = {
-                events: new Map(Object.entries(parsed.events || {})),
-                markets: new Map(Object.entries(parsed.markets || {})),
-                lastUpdated: parsed.lastUpdated || 0,
-            };
+            // Only restore lightweight data - full data comes from API
+            memoryCache.lastUpdated = parsed.lastUpdated || 0;
+            console.log(`[Cache] Loaded index with ${parsed.eventCount || 0} events from localStorage`);
         }
     } catch (e) {
-        console.warn("Failed to load cache:", e);
+        console.warn("[Cache] Failed to load cache:", e);
     }
 }
 
-// Save cache to localStorage
+// Save lightweight cache index to localStorage (just metadata, not full market data)
 function saveCache(): void {
     if (typeof window === "undefined") return;
+
+    // Only save if we have a reasonable amount of data (avoid spamming on each fetch)
+    if (memoryCache.events.size === 0) return;
+
     try {
-        const toStore = {
-            events: Object.fromEntries(memoryCache.events),
-            markets: Object.fromEntries(memoryCache.markets),
+        // Store only a lightweight index with essential search fields
+        const lightweightIndex = {
             lastUpdated: memoryCache.lastUpdated,
+            eventCount: memoryCache.events.size,
+            marketCount: memoryCache.markets.size,
         };
-        localStorage.setItem(CACHE_KEY, JSON.stringify(toStore));
+        localStorage.setItem(CACHE_KEY, JSON.stringify(lightweightIndex));
     } catch (e) {
-        console.warn("Failed to save cache:", e);
+        // Silently fail for localStorage - memory cache is what matters
+        // This prevents QuotaExceededError spam in console
     }
 }
 
@@ -150,7 +154,7 @@ if (typeof window !== "undefined") {
     loadCache();
 }
 
-// Cache an event and its markets
+// Cache an event and its markets (memory only - the important cache)
 function cacheEvent(event: PredictEvent): void {
     memoryCache.events.set(event.eventId, event);
     if (event.markets) {
@@ -230,38 +234,148 @@ export async function fetchEvents(params: FetchEventsParams = {}): Promise<Event
 // Fetch all events across all categories and cache them for settlement
 const ALL_CATEGORIES: Category[] = ["crypto", "sports", "politics", "esports", "culture", "economics", "tech"];
 
-export async function fetchAllEvents(): Promise<PredictEvent[]> {
-    const promises = ALL_CATEGORIES.map(async (category) => {
+// Configuration for deep fetching
+const BATCH_SIZE = 100; // Events per API request (0-99 = 100 events)
+const MAX_EVENTS_PER_CATEGORY = 500; // Maximum events to fetch per category
+const MAX_CONCURRENT_REQUESTS = 3; // Limit concurrent requests to avoid rate limiting
+
+// Helper: delay between requests
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper: fetch with retry and exponential backoff
+async function fetchWithRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+): Promise<T> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-            const [batch1, batch2] = await Promise.all([
+            return await fn();
+        } catch (error) {
+            if (attempt === maxRetries - 1) throw error;
+            const waitTime = baseDelay * Math.pow(2, attempt);
+            console.log(`[API] Retry ${attempt + 1}/${maxRetries} after ${waitTime}ms...`);
+            await delay(waitTime);
+        }
+    }
+    throw new Error("Unreachable");
+}
+
+// Fetch events for a single category with pagination
+async function fetchCategoryEventsDeep(
+    category: Category,
+    maxEvents: number = MAX_EVENTS_PER_CATEGORY
+): Promise<PredictEvent[]> {
+    const allCategoryEvents: PredictEvent[] = [];
+    let start = 0;
+    let hasMore = true;
+    let totalAvailable = 0;
+
+    while (hasMore && allCategoryEvents.length < maxEvents) {
+        const end = Math.min(start + BATCH_SIZE - 1, start + (maxEvents - allCategoryEvents.length) - 1);
+
+        try {
+            const response = await fetchWithRetry(() =>
                 fetchEvents({
                     includeMarkets: true,
                     category,
-                    start: 0,
-                    end: 99,
-                    sortBy: "volume",
-                    sortDirection: "desc",
-                }),
-                fetchEvents({
-                    includeMarkets: true,
-                    category,
-                    start: 100,
-                    end: 199,
+                    start,
+                    end,
                     sortBy: "volume",
                     sortDirection: "desc",
                 })
-            ]);
-            return [...batch1.data, ...batch2.data];
+            );
+
+            allCategoryEvents.push(...response.data);
+            totalAvailable = response.pagination.total;
+            hasMore = response.pagination.hasNext && allCategoryEvents.length < maxEvents;
+
+            if (hasMore) {
+                start = response.pagination.end + 1;
+                // Small delay between paginated requests to be respectful
+                await delay(100);
+            }
         } catch (e) {
-            console.error(`Failed to fetch ${category} events:`, e);
+            console.error(`[${category}] Failed to fetch events at offset ${start}:`, e);
+            break;
+        }
+    }
+
+    console.log(`[Cache] ${category}: loaded ${allCategoryEvents.length}/${totalAvailable} events`);
+    return allCategoryEvents;
+}
+
+// Main function: fetch all events across all categories (comprehensive)
+export async function fetchAllEvents(): Promise<PredictEvent[]> {
+    console.log(`[Cache] Starting comprehensive market fetch across ${ALL_CATEGORIES.length} categories...`);
+    const startTime = Date.now();
+
+    // Process categories in batches to limit concurrent requests
+    const allEvents: PredictEvent[] = [];
+
+    for (let i = 0; i < ALL_CATEGORIES.length; i += MAX_CONCURRENT_REQUESTS) {
+        const categoryBatch = ALL_CATEGORIES.slice(i, i + MAX_CONCURRENT_REQUESTS);
+        const batchPromises = categoryBatch.map(category => fetchCategoryEventsDeep(category));
+        const batchResults = await Promise.all(batchPromises);
+        allEvents.push(...batchResults.flat());
+    }
+
+    // Count total markets
+    const totalMarkets = allEvents.reduce((sum, e) => sum + (e.markets?.length || 0), 0);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    console.log(`[Cache] ✓ Loaded ${allEvents.length} events with ${totalMarkets} markets across ${ALL_CATEGORIES.length} categories in ${elapsed}s`);
+    return allEvents;
+}
+
+// Quick fetch for UI (fewer events, faster response)
+export async function fetchEventsQuick(): Promise<PredictEvent[]> {
+    const promises = ALL_CATEGORIES.map(async (category) => {
+        try {
+            const response = await fetchEvents({
+                includeMarkets: true,
+                category,
+                start: 0,
+                end: 49,
+                sortBy: "volume",
+                sortDirection: "desc",
+            });
+            return response.data;
+        } catch (e) {
+            console.error(`[Quick] Failed to fetch ${category}:`, e);
             return [];
         }
     });
 
     const results = await Promise.all(promises);
     const allEvents = results.flat();
+    console.log(`[Cache] Quick load: ${allEvents.length} events`);
+    return allEvents;
+}
 
-    console.log(`[Cache] Loaded ${allEvents.length} events across ${ALL_CATEGORIES.length} categories`);
+// Deep fetch with custom limits (for testing/settlement)
+export async function fetchEventsDeep(
+    eventsPerCategory: number = 1000,
+    categories: Category[] = ALL_CATEGORIES
+): Promise<PredictEvent[]> {
+    console.log(`[Cache] Deep fetch: up to ${eventsPerCategory} events per category across ${categories.length} categories...`);
+    const startTime = Date.now();
+
+    const allEvents: PredictEvent[] = [];
+
+    for (let i = 0; i < categories.length; i += MAX_CONCURRENT_REQUESTS) {
+        const categoryBatch = categories.slice(i, i + MAX_CONCURRENT_REQUESTS);
+        const batchPromises = categoryBatch.map(category =>
+            fetchCategoryEventsDeep(category, eventsPerCategory)
+        );
+        const batchResults = await Promise.all(batchPromises);
+        allEvents.push(...batchResults.flat());
+    }
+
+    const totalMarkets = allEvents.reduce((sum, e) => sum + (e.markets?.length || 0), 0);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    console.log(`[Cache] ✓ Deep fetch complete: ${allEvents.length} events with ${totalMarkets} markets in ${elapsed}s`);
     return allEvents;
 }
 

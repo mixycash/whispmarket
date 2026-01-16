@@ -2124,6 +2124,182 @@ button {
   text-decoration: underline;
 }
 
+/* Portfolio Header Actions */
+.portfolio-header-actions {
+  display: flex;
+  gap: 0.625rem;
+  align-items: center;
+}
+
+.portfolio-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.portfolio-action-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+.portfolio-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.portfolio-action-btn.secondary {
+  background: transparent;
+  color: var(--muted);
+}
+
+.portfolio-action-btn.secondary:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.portfolio-action-btn .spinning {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+/* Portfolio Empty State - Enhanced */
+.portfolio-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4rem 2rem;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+}
+
+.empty-state-icon-wrapper {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(44, 156, 219, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%);
+  border-radius: 50%;
+  margin-bottom: 1.25rem;
+}
+
+.empty-icon {
+  font-size: 2rem;
+}
+
+.portfolio-empty-state .empty-state-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--foreground);
+  margin: 0 0 0.5rem 0;
+}
+
+.portfolio-empty-state .empty-state-desc {
+  font-size: 0.9375rem;
+  color: var(--muted);
+  margin: 0 0 1.5rem 0;
+  max-width: 280px;
+}
+
+.empty-state-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, var(--accent) 0%, #56afe2 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(44, 156, 219, 0.3);
+}
+
+.empty-state-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(44, 156, 219, 0.4);
+}
+
+/* Claim Button Spinner */
+.claim-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+  margin-right: 0.375rem;
+}
+
+/* ============================
+   App Footer
+   ============================ */
+
+.app-footer {
+  width: 100%;
+  margin-top: 2rem;
+  padding: 1rem 0 0.5rem;
+  border-top: 1px solid var(--border-subtle);
+  box-sizing: border-box;
+}
+
+.footer-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.footer-brand {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.footer-divider {
+  font-size: 0.625rem;
+  color: var(--border);
+  line-height: 1;
+}
+
+.footer-powered {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.footer-solana-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  opacity: 0.8;
+  vertical-align: middle;
+}
+
 /* ============================
    Activity Bar - Bottom Fixed
    ============================ */
@@ -2212,4 +2388,493 @@ button {
 /* Adjust body padding for bottom activity bar */
 body {
   padding-bottom: 28px;
+}
+
+/* ============================
+   Wallet Page - Balance Section
+   ============================ */
+
+.balance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.balance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.balance-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.balance-refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  background: var(--surface-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.balance-refresh-btn:hover:not(:disabled) {
+  background: var(--border-subtle);
+  color: var(--foreground);
+}
+
+.balance-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refresh-icon {
+  font-size: 1rem;
+  display: inline-block;
+}
+
+.refresh-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.balance-display {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, rgba(44, 156, 219, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.balance-icon-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.balance-sol-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.balance-icon-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  font-size: 0.875rem;
+  background: var(--surface);
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.balance-values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.balance-primary {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+}
+
+.balance-secondary {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.balance-error {
+  font-size: 0.8125rem;
+  color: var(--danger);
+  padding: 0.75rem 1rem;
+  background: var(--danger-bg);
+  border-radius: 8px;
+  border: 1px solid var(--danger);
+}
+
+/* ============================
+   Wallet Page - Deposit Section
+   ============================ */
+
+.deposit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.deposit-connect-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.connect-icon {
+  font-size: 2.5rem;
+  opacity: 0.6;
+}
+
+.deposit-connect-prompt p {
+  font-size: 0.9375rem;
+  margin: 0;
+}
+
+/* Balance Card */
+.deposit-balance-card {
+  padding: 1.25rem;
+  background: var(--background);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.deposit-balance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.deposit-balance-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.deposit-balance-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.deposit-balance-amount {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.deposit-sol-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.deposit-sol-value {
+  font-size: 1.375rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+}
+
+.deposit-usd-value {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+/* Input Section */
+.deposit-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.deposit-input-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.deposit-input-wrapper {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.deposit-input-field {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.deposit-input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  padding-right: 5rem;
+  background: var(--background);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--foreground);
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  transition: all 0.15s ease;
+}
+
+.deposit-input::placeholder {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.deposit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.deposit-input-suffix {
+  position: absolute;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.deposit-input-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.deposit-max-btn {
+  padding: 0 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.deposit-max-btn:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.deposit-input-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.deposit-input-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.deposit-input-usd {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Deposit Button */
+.deposit-btn {
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, var(--accent) 0%, #56afe2 100%);
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(44, 156, 219, 0.3);
+}
+
+.deposit-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(44, 156, 219, 0.4);
+}
+
+.deposit-btn:disabled {
+  background: var(--surface-hover);
+  color: var(--muted);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.deposit-btn-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.deposit-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Info Box */
+.deposit-info-box {
+  padding: 1rem;
+  background: var(--background);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+}
+
+.deposit-info-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.75rem;
+}
+
+.deposit-info-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.deposit-info-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.step-number {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: white;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Error & Success States */
+.deposit-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.875rem 1rem;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  color: var(--danger);
+  font-size: 0.8125rem;
+}
+
+.error-icon {
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+.deposit-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.875rem 1rem;
+  background: var(--success-bg);
+  border: 1px solid var(--success);
+  border-radius: 10px;
+}
+
+.success-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--success);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.success-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--success);
+}
+
+.success-link {
+  color: var(--success);
+  font-weight: 600;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.success-link:hover {
+  opacity: 0.8;
+}
+
+/* Info Notice for wallet page */
+.info-notice {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, rgba(44, 156, 219, 0.08) 0%, rgba(168, 85, 247, 0.08) 100%);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.info-notice p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
 }

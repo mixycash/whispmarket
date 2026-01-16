@@ -22,11 +22,13 @@ import {
     extractHandle,
     getProgram,
 } from "@/utils/constants";
+import { useSolPrice } from "@/hooks/use-sol-price";
 
 export default function DepositSol() {
     const { publicKey, connected, sendTransaction } = useWallet();
     const { connection } = useConnection();
     const wallet = useAnchorWallet();
+    const { formatUsd, isLoading: priceLoading } = useSolPrice();
 
     const [solBalance, setSolBalance] = useState<number>(0);
     const [wsolBalance, setWsolBalance] = useState<number>(0);
@@ -228,72 +230,79 @@ export default function DepositSol() {
 
     if (!connected) {
         return (
-            <div className="mt-8 text-center text-[var(--muted)]">
-                Connect wallet to deposit SOL
+            <div className="deposit-connect-prompt">
+                <div className="connect-icon">💳</div>
+                <p>Connect your wallet to deposit SOL</p>
             </div>
         );
     }
 
+    const inputAmount = parseFloat(amount) || 0;
+
     return (
-        <div className="mt-8 space-y-6">
-            {/* Balance Display */}
-            <div className="flex items-center justify-between text-sm p-3 bg-[var(--surface)] rounded-xl">
-                <div>
-                    <span className="text-[var(--muted)]">Available</span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                        <img
-                            src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
-                            alt="SOL"
-                            width="16"
-                            height="16"
-                            className="rounded-full"
-                        />
-                        <div className="text-lg font-semibold">{solBalance.toFixed(4)} SOL</div>
-                    </div>
-                </div>
-                {wsolBalance > 0 && (
-                    <div className="text-right">
-                        <span className="text-[var(--muted)]">Encrypted</span>
-                        <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                            <div className="text-lg font-semibold">{wsolBalance.toFixed(4)} wSOL</div>
+        <div className="deposit-section">
+            {/* Available Balance Card */}
+            <div className="deposit-balance-card">
+                <div className="deposit-balance-row">
+                    <div className="deposit-balance-left">
+                        <span className="deposit-balance-label">Available</span>
+                        <div className="deposit-balance-amount">
                             <img
                                 src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
                                 alt="SOL"
-                                width="16"
-                                height="16"
-                                className="rounded-full opacity-80"
+                                className="deposit-sol-icon"
                             />
+                            <span className="deposit-sol-value">{solBalance.toFixed(4)} SOL</span>
                         </div>
+                        {!priceLoading && (
+                            <span className="deposit-usd-value">≈ {formatUsd(solBalance)}</span>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
 
             {/* Deposit Input */}
-            <div>
-                <label className="block text-xs font-semibold text-[var(--muted)] uppercase tracking-wider mb-2">
-                    Amount to Deposit (SOL)
+            <div className="deposit-input-section">
+                <label className="deposit-input-label">
+                    Amount to Deposit
                 </label>
-                <div className="flex gap-2">
-                    <input
-                        type="number"
-                        placeholder={`${MIN_DEPOSIT} - ${MAX_DEPOSIT} SOL`}
-                        value={amount}
-                        onChange={(e) => {
-                            setAmount(e.target.value);
-                            setError(null);
-                            setSuccess(null);
-                        }}
-                        className="flex-1 p-3 border border-[var(--border-subtle)] rounded-xl bg-[var(--background)] text-[var(--foreground)] placeholder-[var(--muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
-                        step="0.01"
-                        min={MIN_DEPOSIT}
-                        max={MAX_DEPOSIT}
-                    />
+                <div className="deposit-input-wrapper">
+                    <div className="deposit-input-field">
+                        <input
+                            type="number"
+                            placeholder="0.00"
+                            value={amount}
+                            onChange={(e) => {
+                                setAmount(e.target.value);
+                                setError(null);
+                                setSuccess(null);
+                            }}
+                            className="deposit-input"
+                            step="0.01"
+                            min={MIN_DEPOSIT}
+                            max={MAX_DEPOSIT}
+                        />
+                        <div className="deposit-input-suffix">
+                            <img
+                                src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
+                                alt="SOL"
+                                className="deposit-input-icon"
+                            />
+                            <span>SOL</span>
+                        </div>
+                    </div>
                     <button
-                        onClick={() => setAmount((solBalance - 0.02).toFixed(4))}
-                        className="px-4 py-3 bg-[var(--surface)] text-[var(--text-secondary)] rounded-xl hover:bg-[var(--surface-hover)] text-sm font-medium transition-colors"
+                        onClick={() => setAmount(Math.max(0, solBalance - 0.02).toFixed(4))}
+                        className="deposit-max-btn"
                     >
                         Max
                     </button>
+                </div>
+                <div className="deposit-input-meta">
+                    <span className="deposit-input-hint">{MIN_DEPOSIT} - {MAX_DEPOSIT} SOL</span>
+                    {inputAmount > 0 && !priceLoading && (
+                        <span className="deposit-input-usd">≈ {formatUsd(inputAmount)}</span>
+                    )}
                 </div>
             </div>
 
@@ -301,54 +310,66 @@ export default function DepositSol() {
             <button
                 onClick={handleDeposit}
                 disabled={loading || !amount || parseFloat(amount) <= 0}
-                className="w-full bg-[var(--accent)] text-white py-3 px-4 rounded-xl hover:bg-[var(--accent-hover)] disabled:bg-[var(--surface-hover)] disabled:text-[var(--muted)] disabled:cursor-not-allowed font-semibold transition-colors"
+                className="deposit-btn"
             >
                 {loading ? (
-                    step === "wrapping" ? "Wrapping SOL..."
-                        : step === "depositing" ? "Creating confidential balance..."
-                            : "Processing..."
+                    <span className="deposit-btn-loading">
+                        <span className="deposit-spinner" />
+                        {step === "wrapping" ? "Wrapping SOL..."
+                            : step === "depositing" ? "Creating confidential balance..."
+                                : "Processing..."}
+                    </span>
                 ) : (
-                    "Deposit SOL"
+                    <>Deposit{inputAmount > 0 && !priceLoading && ` (${formatUsd(inputAmount)})`}</>
                 )}
             </button>
 
             {/* Info Box */}
-            <div className="text-xs text-[var(--muted)] p-3 bg-[var(--surface)] rounded-xl">
-                <p className="font-medium mb-1">How it works:</p>
-                <ol className="list-decimal list-inside space-y-1">
-                    <li>Your SOL is wrapped to wSOL</li>
-                    <li>wSOL is deposited to protocol vault</li>
-                    <li>You receive confidential betting balance</li>
-                </ol>
+            <div className="deposit-info-box">
+                <div className="deposit-info-title">How it works</div>
+                <div className="deposit-info-steps">
+                    <div className="deposit-info-step">
+                        <span className="step-number">1</span>
+                        <span>Your SOL is wrapped to wSOL</span>
+                    </div>
+                    <div className="deposit-info-step">
+                        <span className="step-number">2</span>
+                        <span>wSOL is deposited to protocol vault</span>
+                    </div>
+                    <div className="deposit-info-step">
+                        <span className="step-number">3</span>
+                        <span>You receive confidential betting balance</span>
+                    </div>
+                </div>
             </div>
 
             {/* Error */}
             {error && (
-                <p className="text-sm text-[var(--danger)] bg-[var(--danger-bg)] border border-[var(--danger)] p-3 rounded-xl">
+                <div className="deposit-error">
+                    <span className="error-icon">⚠</span>
                     {error}
-                </p>
+                </div>
             )}
 
             {/* Success */}
             {success && (
-                <div className="bg-[var(--success-bg)] border border-[var(--success)] p-3 rounded-xl">
-                    <p className="text-sm text-[var(--success)]">
-                        ✅ {success.message}
+                <div className="deposit-success">
+                    <span className="success-icon">✓</span>
+                    <div className="success-content">
+                        <span>{success.message}</span>
                         {success.tx && (
-                            <>
-                                {" "}
-                                <a
-                                    href={`https://orb.helius.dev/tx/${success.tx}?cluster=devnet`}
-                                    target="_blank"
-                                    className="underline hover:text-white"
-                                >
-                                    View tx
-                                </a>
-                            </>
+                            <a
+                                href={`https://orb.helius.dev/tx/${success.tx}?cluster=devnet`}
+                                target="_blank"
+                                className="success-link"
+                            >
+                                View transaction →
+                            </a>
                         )}
-                    </p>
+                    </div>
                 </div>
             )}
         </div>
     );
 }
+

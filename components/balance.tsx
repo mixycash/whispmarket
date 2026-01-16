@@ -8,6 +8,7 @@ import {
   extractHandle,
 } from "@/utils/constants";
 import { PROTOCOL_INCO_MINT } from "@/lib/protocol";
+import { useSolPrice } from "@/hooks/use-sol-price";
 
 export default function Balance() {
   const { publicKey, connected, signMessage } = useWallet();
@@ -15,6 +16,7 @@ export default function Balance() {
   const [balance, setBalance] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { formatUsd, isLoading: priceLoading } = useSolPrice();
 
   const handleReadBalance = async () => {
     if (!connected || !publicKey || !signMessage) return;
@@ -59,31 +61,49 @@ export default function Balance() {
     return () => window.removeEventListener("token-minted", onMint);
   }, []);
 
+  const numericBalance = balance ? parseFloat(balance) : 0;
+
   return (
-    <div className="mt-8 space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-[var(--muted)]">Confidential Balance:</span>
-          <div className="flex items-center gap-2 bg-[var(--surface)] px-3 py-1.5 rounded-lg border border-[var(--border-subtle)]">
-            <img
-              src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
-              alt="SOL"
-              width="16"
-              height="16"
-              className="rounded-full"
-            />
-            <span className="font-mono font-semibold">{balance ? `${balance} SOL` : "****"}</span>
-          </div>
-        </div>
+    <div className="balance-section">
+      <div className="balance-header">
+        <span className="balance-label">Confidential Balance</span>
         <button
           onClick={handleReadBalance}
           disabled={loading || !connected}
-          className="bg-gray-600 text-white py-2 px-4 rounded-full hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="balance-refresh-btn"
         >
-          {loading ? "Loading..." : "Refresh"}
+          {loading ? (
+            <span className="refresh-icon spinning">⟳</span>
+          ) : (
+            <span className="refresh-icon">⟳</span>
+          )}
+          {loading ? "Decrypting..." : "Reveal"}
         </button>
       </div>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+
+      <div className="balance-display">
+        <div className="balance-icon-wrapper">
+          <img
+            src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
+            alt="SOL"
+            className="balance-sol-icon"
+          />
+          <span className="balance-icon-badge">🔒</span>
+        </div>
+        <div className="balance-values">
+          <div className="balance-primary">
+            {balance ? `${parseFloat(balance).toFixed(4)} SOL` : "••••"}
+          </div>
+          {balance && !priceLoading && (
+            <div className="balance-secondary">
+              ≈ {formatUsd(numericBalance)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {error && <p className="balance-error">{error}</p>}
     </div>
   );
 }
+

@@ -188,41 +188,45 @@ export default function PortfolioPage() {
                         <h1 className="page-title">Portfolio</h1>
                         <p className="page-subtitle">{bets.length} bet{bets.length !== 1 ? "s" : ""}</p>
                     </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div className="portfolio-header-actions">
                         {connected && bets.some(b => b.status === "lost") && (
                             <button
                                 onClick={handleClearLost}
-                                style={{
-                                    backgroundColor: 'transparent',
-                                    border: '1px solid #444',
-                                    color: '#aaa',
-                                    padding: '6px 12px',
-                                    borderRadius: '6px',
-                                    cursor: 'pointer',
-                                    fontSize: '0.85rem'
-                                }}
+                                className="portfolio-action-btn secondary"
                             >
                                 Clear Lost
                             </button>
                         )}
                         {connected && bets.length > 0 && (
-                            <button onClick={handleRefresh} disabled={refreshing} className="refresh-btn">
-                                {refreshing ? "⟳" : "↻"}
+                            <button
+                                onClick={handleRefresh}
+                                disabled={refreshing}
+                                className="portfolio-action-btn"
+                            >
+                                <span className={refreshing ? "spinning" : ""}>↻</span>
+                                {refreshing ? "Refreshing..." : "Refresh"}
                             </button>
                         )}
                     </div>
                 </div>
 
                 {!connected ? (
-                    <div className="empty-state">
-                        <div className="empty-state-icon">🔒</div>
+                    <div className="portfolio-empty-state">
+                        <div className="empty-state-icon-wrapper">
+                            <span className="empty-icon">🔒</span>
+                        </div>
                         <h3 className="empty-state-title">Connect Wallet</h3>
-                        <p className="empty-state-desc">Connect your wallet to view your bets</p>
+                        <p className="empty-state-desc">Connect your wallet to view your confidential bets</p>
                     </div>
                 ) : bets.length === 0 ? (
-                    <div className="empty-state">
-                        <p className="empty-state-desc">Place your first confidential bet</p>
-                        <Link href="/" className="empty-state-btn">Browse Markets</Link>
+                    <div className="portfolio-empty-state">
+                        <div className="empty-state-icon-wrapper">
+                        </div>
+                        <h3 className="empty-state-title">No Bets Yet</h3>
+                        <p className="empty-state-desc">Place your first confidential bet to get started</p>
+                        <Link href="/" className="empty-state-cta">
+                            Browse Markets
+                        </Link>
                     </div>
                 ) : (
                     <div className="portfolio-grid">
@@ -278,7 +282,10 @@ export default function PortfolioPage() {
                                                 disabled={claimingTx === bet.tx}
                                             >
                                                 {claimingTx === bet.tx ? (
-                                                    <>⏳ Generating ZK Proof...</>
+                                                    <>
+                                                        <span className="claim-spinner" />
+                                                        Generating ZK Proof...
+                                                    </>
                                                 ) : (
                                                     <>🎫 Claim Winnings</>
                                                 )}
@@ -287,18 +294,10 @@ export default function PortfolioPage() {
 
                                         {/* Show result message if this bet was just acted on */}
                                         {claimResult && claimResult.tx === bet.tx && (
-                                            <div style={{
-                                                marginTop: '10px',
-                                                padding: '8px',
-                                                borderRadius: '4px',
-                                                backgroundColor: claimResult.result.success ? 'rgba(0, 255, 0, 0.1)' : 'rgba(255, 0, 0, 0.1)',
-                                                color: claimResult.result.success ? '#4caf50' : '#f44336',
-                                                fontSize: '0.85rem',
-                                                textAlign: 'center'
-                                            }}>
+                                            <div className={`claim-result ${claimResult.result.success ? 'success' : 'error'}`}>
                                                 {claimResult.result.success ?
-                                                    `Success! Payout: ${claimResult.result.claimAmount?.toFixed(2)}` :
-                                                    `Error: ${claimResult.result.error}`
+                                                    `✓ Payout: ${claimResult.result.claimAmount?.toFixed(4)} SOL` :
+                                                    `⚠ ${claimResult.result.error}`
                                                 }
                                             </div>
                                         )}
@@ -336,3 +335,4 @@ export default function PortfolioPage() {
         </Padder>
     );
 }
+

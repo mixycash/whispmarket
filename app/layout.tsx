@@ -19,7 +19,7 @@ const outfit = Outfit({
 
 export const metadata: Metadata = {
   title: "WHISPI | Confidential Prediction Markets",
-  description: "Trade privately on prediction markets with Inco network.",
+  description: "Trade private prediction markets on Solana powered by Inco & Helius",
 };
 
 export default function RootLayout({

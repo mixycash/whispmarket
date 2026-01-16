@@ -1,46 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-
-const SOL_MINT = "So11111111111111111111111111111111111111112";
-const JUP_PRICE_API = `https://api.jup.ag/price/v3?ids=${SOL_MINT}`;
-const API_KEY = "1854cb83-08f2-4604-982d-b5d2576630a2";
+import { useSolPrice } from "@/hooks/use-sol-price";
 
 const ActivityBar = () => {
-    const [solPrice, setSolPrice] = useState<number | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-
-    const fetchPrice = useCallback(async () => {
-        try {
-            const response = await fetch(JUP_PRICE_API, {
-                headers: {
-                    "x-api-key": API_KEY,
-                },
-                cache: "no-store",
-            });
-
-            if (!response.ok) {
-                throw new Error(`API error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            const solData = data?.[SOL_MINT];
-
-            if (solData?.usdPrice) {
-                setSolPrice(Number(solData.usdPrice));
-            }
-        } catch (err) {
-            console.error("[ActivityBar] Failed to fetch price:", err);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchPrice();
-        const interval = setInterval(fetchPrice, 30000);
-        return () => clearInterval(interval);
-    }, [fetchPrice]);
+    const { solPrice, isLoading } = useSolPrice();
 
     const formatPrice = (price: number | null): string => {
         if (price === null) return "—";

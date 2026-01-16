@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { PredictEvent, Market, formatPrice, formatVolume, getCategoryColor } from "@/lib/jup-predict";
 import { placeBet, fetchUserMarketBet, fetchMarketTotals, calculatePotentialPayout, Bet } from "@/lib/confidential-betting";
-import { fetchUserMint, fetchUserTokenAccount } from "@/utils/constants";
+import { fetchUserTokenAccount } from "@/utils/constants";
 import { PROTOCOL_INCO_MINT } from "@/lib/protocol";
 
 interface MarketModalProps {
@@ -19,16 +19,14 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
     const [betAmount, setBetAmount] = useState("");
     const [betting, setBetting] = useState(false);
     const [betResult, setBetResult] = useState<{ success: boolean; message: string } | null>(null);
-    const [userMint, setUserMint] = useState<string | null>(null);
-    const [tokenType, setTokenType] = useState<"wsol" | "legacy">("wsol");
     const [hasTokens, setHasTokens] = useState(false);
 
     // Async data states
     const [totals, setTotals] = useState({ yes: 0, no: 0, total: 0 });
     const [existingBet, setExistingBet] = useState<Bet | null | undefined>(null);
 
-    // Get display unit based on token type
-    const unit = tokenType === "wsol" ? "WSOL" : "tokens";
+    // Get display unit
+    const unit = "wSOL";
 
     const { publicKey, sendTransaction, connected } = useWallet();
     const { connection } = useConnection();
@@ -37,45 +35,27 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
     // Track if we've already fetched token account for this wallet/session
     const tokenFetchedRef = useRef<string | null>(null);
 
-    // Check user's token accounts - support BOTH old per-wallet mints AND new protocol mint
+    // Check user's token accounts - enforces new protocol mint
     useEffect(() => {
         if (!publicKey || !connection) {
-            setUserMint(null);
             setHasTokens(false);
             tokenFetchedRef.current = null;
             return;
         }
 
         const walletKey = publicKey.toBase58();
-        if (tokenFetchedRef.current === walletKey && userMint) {
+        if (tokenFetchedRef.current === walletKey) {
             return;
         }
 
         (async () => {
-            // First, check for new protocol wSOL-backed mint
+            // Check for protocol wSOL-backed mint account
             const protocolAccount = await fetchUserTokenAccount(connection, publicKey, PROTOCOL_INCO_MINT);
             if (protocolAccount) {
-                setUserMint(PROTOCOL_INCO_MINT.toBase58());
-                setTokenType("wsol");
                 setHasTokens(true);
-                tokenFetchedRef.current = walletKey;
-                return;
+            } else {
+                setHasTokens(false);
             }
-
-            // Fallback: check for legacy per-wallet mint (backwards compatibility)
-            const legacyMint = await fetchUserMint(connection, publicKey);
-            if (legacyMint) {
-                setUserMint(legacyMint.pubkey.toBase58());
-                setTokenType("legacy");
-                const legacyAccount = await fetchUserTokenAccount(connection, publicKey, legacyMint.pubkey);
-                setHasTokens(!!legacyAccount);
-                tokenFetchedRef.current = walletKey;
-                return;
-            }
-
-            // No tokens found
-            setUserMint(null);
-            setHasTokens(false);
             tokenFetchedRef.current = walletKey;
         })();
     }, [publicKey, connection]);
@@ -243,7 +223,7 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
     const estNoOdds = getEstimatedOdds("no");
 
     const handleBet = async () => {
-        if (!wallet || !selectedMarket || !betAmount || !publicKey || !userMint || !selectedOutcome) return;
+        if (!wallet || !selectedMarket || !betAmount || !publicKey || !selectedOutcome) return;
 
         const amount = parseFloat(betAmount);
         if (isNaN(amount) || amount <= 0) {
@@ -281,7 +261,7 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                 event.metadata?.title || selectedMarket.marketId,
                 selectedOutcome,
                 amount,
-                userMint,
+                PROTOCOL_INCO_MINT.toBase58(),
                 currentOdds,
                 payout,
                 event.metadata?.imageUrl,
@@ -587,7 +567,7 @@ export default function MarketModal({ event, selectedMarketId, onClose }: Market
                                             fontSize: '0.85rem',
                                             fontWeight: 500
                                         }}>
-                                            {tokenType === "wsol" ? "◎" : "🪙"}
+                                            ◎
                                         </span>
                                     </div>
 

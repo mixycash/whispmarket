@@ -221,8 +221,6 @@ export default function PortfolioPage() {
                     </div>
                 ) : bets.length === 0 ? (
                     <div className="empty-state">
-                        <div className="empty-state-icon">📊</div>
-                        <h3 className="empty-state-title">No Bets Yet</h3>
                         <p className="empty-state-desc">Place your first confidential bet</p>
                         <Link href="/" className="empty-state-btn">Browse Markets</Link>
                     </div>
@@ -332,8 +330,7 @@ export default function PortfolioPage() {
                 )}
 
                 <div className="info-notice">
-                    <span className="info-notice-icon">🔐</span>
-                    <p>Bet amounts encrypted on-chain • ZK proofs for claims</p>
+                    <p>🔐 Bet amounts are encrypted on-chain • Use zk-proofs for payout claims</p>
                 </div>
             </div>
         </Padder>

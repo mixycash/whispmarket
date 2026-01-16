@@ -9,7 +9,8 @@ import {
 } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
 import { simpleTransfer } from "@/lib/confidential-transfer";
-import { fetchUserMint, fetchUserTokenAccount } from "@/utils/constants";
+import { PROTOCOL_INCO_MINT } from "@/lib/protocol";
+import { fetchUserTokenAccount } from "@/utils/constants";
 
 export default function Transfer() {
     const { publicKey, connected, sendTransaction } = useWallet();
@@ -17,7 +18,6 @@ export default function Transfer() {
     const wallet = useAnchorWallet();
     const lastWallet = useRef<string | null>(null);
 
-    const [mint, setMint] = useState<string | null>(null);
     const [hasAccount, setHasAccount] = useState(false);
     const [recipient, setRecipient] = useState("");
     const [amount, setAmount] = useState("");
@@ -30,17 +30,12 @@ export default function Transfer() {
         const key = publicKey?.toBase58() ?? null;
         if (key === lastWallet.current) return;
         lastWallet.current = key;
-        setMint(null);
         setHasAccount(false);
         if (!key) return;
 
         (async () => {
-            const m = await fetchUserMint(connection, publicKey!);
-            if (m) {
-                setMint(m.pubkey.toBase58());
-                const a = await fetchUserTokenAccount(connection, publicKey!, m.pubkey);
-                setHasAccount(!!a);
-            }
+            const a = await fetchUserTokenAccount(connection, publicKey!, PROTOCOL_INCO_MINT);
+            setHasAccount(!!a);
         })();
     }, [publicKey, connection]);
 
@@ -48,14 +43,9 @@ export default function Transfer() {
     useEffect(() => {
         const handleMint = () => {
             if (publicKey) {
-                fetchUserMint(connection, publicKey).then((m) => {
-                    if (m) {
-                        setMint(m.pubkey.toBase58());
-                        fetchUserTokenAccount(connection, publicKey, m.pubkey).then((a) =>
-                            setHasAccount(!!a)
-                        );
-                    }
-                });
+                fetchUserTokenAccount(connection, publicKey, PROTOCOL_INCO_MINT).then((a) =>
+                    setHasAccount(!!a)
+                );
             }
         };
         window.addEventListener("token-minted", handleMint);
@@ -72,8 +62,8 @@ export default function Transfer() {
     };
 
     const handleTransfer = async () => {
-        if (!publicKey || !wallet || !mint) {
-            setError("Wallet not connected or no mint found");
+        if (!publicKey || !wallet) {
+            setError("Wallet not connected");
             return;
         }
 
@@ -99,7 +89,7 @@ export default function Transfer() {
                 sendTransaction,
                 recipient,
                 numAmount,
-                mint
+                PROTOCOL_INCO_MINT.toBase58()
             );
 
             if (result.success) {
@@ -223,15 +213,6 @@ export default function Transfer() {
                         >
                             View transaction
                         </a>
-                    </p>
-                </div>
-            )}
-
-            {mint && (
-                <div className="mt-4 p-3 bg-[var(--background)] rounded-xl border border-[var(--border-subtle)]">
-                    <p className="text-[10px] uppercase tracking-wider text-[var(--muted)] font-bold mb-1">Current Mint Address</p>
-                    <p className="text-xs text-[var(--text-secondary)] font-mono break-all selection:bg-[var(--accent)] selection:text-white">
-                        {mint}
                     </p>
                 </div>
             )}

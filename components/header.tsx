@@ -5,7 +5,6 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { decrypt } from "@inco/solana-sdk/attested-decrypt";
 import {
-  fetchUserMint,
   fetchUserTokenAccount,
   extractHandle,
 } from "@/utils/constants";
@@ -20,7 +19,6 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
 
   // Balances state - track both types
   const [wsolBalance, setWsolBalance] = useState<string | null>(null);
-  const [legacyBalance, setLegacyBalance] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [lastFetch, setLastFetch] = useState(0);
@@ -39,9 +37,7 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
 
   // Get total balance for display
   const totalBalance = (): string => {
-    const wsol = parseFloat(wsolBalance || "0");
-    const legacy = parseFloat(legacyBalance || "0");
-    return (wsol + legacy).toFixed(2);
+    return wsolBalance || "0.00";
   };
 
   const handleRevealBalance = async () => {
@@ -69,23 +65,6 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
         }
       } else {
         setWsolBalance(null);
-      }
-
-      // Check legacy per-wallet mint
-      const legacyMint = await fetchUserMint(connection, publicKey);
-      if (legacyMint) {
-        const legacyAcc = await fetchUserTokenAccount(connection, publicKey, legacyMint.pubkey);
-        if (legacyAcc) {
-          const handle = extractHandle(legacyAcc.data);
-          if (handle !== BigInt(0)) {
-            const result = await decrypt([handle.toString()], { address: publicKey, signMessage });
-            setLegacyBalance((Number(BigInt(result.plaintexts?.[0] ?? "0")) / 1e6).toFixed(2));
-          } else {
-            setLegacyBalance("0.00");
-          }
-        }
-      } else {
-        setLegacyBalance(null);
       }
 
       setRevealed(true);
@@ -144,7 +123,6 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
   // Reset when wallet changes
   useEffect(() => {
     setWsolBalance(null);
-    setLegacyBalance(null);
     setRevealed(false);
   }, [publicKey]);
 
@@ -152,7 +130,6 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
   useEffect(() => {
     const onMint = () => {
       setWsolBalance(null);
-      setLegacyBalance(null);
       setRevealed(false);
     };
     window.addEventListener("token-minted", onMint);
@@ -227,15 +204,18 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
               onClick={() => revealed && setShowBalanceDropdown(!showBalanceDropdown)}
             >
               <div className="flex items-center gap-1.5 text-[var(--muted)]" title="Confidential Balance">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                </svg>
+                <img
+                  src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
+                  alt="SOL"
+                  width="14"
+                  height="14"
+                  className="rounded-full opacity-80"
+                />
               </div>
               <span className="font-mono text-sm font-medium text-[var(--foreground)] min-w-[4ch] text-center">
                 {loading ? "..." : revealed ? totalBalance() : "••••"}
               </span>
-              {revealed && (wsolBalance || legacyBalance) && (
+              {revealed && wsolBalance && (
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--muted)]">
                   <path d="M6 9l6 6 6-6"></path>
                 </svg>
@@ -274,22 +254,20 @@ const Header = ({ onSearchSelect }: { onSearchSelect?: (event: PredictEvent) => 
                 {wsolBalance !== null && (
                   <div className="p-2 px-3 flex justify-between items-center hover:bg-[var(--surface-hover)] cursor-default">
                     <div className="flex items-center gap-2">
-                      <span className="text-base">◎</span>
+                      <img
+                        src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
+                        alt="SOL"
+                        width="16"
+                        height="16"
+                        className="rounded-full"
+                      />
                       <span className="text-sm">wSOL</span>
                     </div>
                     <span className="font-mono text-sm font-medium">{wsolBalance}</span>
                   </div>
                 )}
-                {legacyBalance !== null && (
-                  <div className="p-2 px-3 flex justify-between items-center hover:bg-[var(--surface-hover)] cursor-default">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base">🪙</span>
-                      <span className="text-sm">Legacy</span>
-                    </div>
-                    <span className="font-mono text-sm font-medium">{legacyBalance}</span>
-                  </div>
-                )}
-                {!wsolBalance && !legacyBalance && (
+
+                {!wsolBalance && (
                   <div className="p-3 text-sm text-[var(--muted)] text-center">
                     No tokens found
                   </div>

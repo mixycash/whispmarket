@@ -52,28 +52,7 @@ export const extractHandle = (data: Buffer): bigint => {
   return result;
 };
 
-export const fetchUserMint = async (
-  connection: Connection,
-  wallet: PublicKey
-): Promise<{ pubkey: PublicKey; data: Buffer } | null> => {
-  try {
-    const accounts = await rateLimitedGetProgramAccounts(connection, PROGRAM_ID, [
-      {
-        memcmp: {
-          offset: 0,
-          bytes: bs58.encode(Buffer.from(INCO_MINT_DISCRIMINATOR)),
-        },
-      },
-      { memcmp: { offset: 9, bytes: wallet.toBase58() } },
-    ]);
-    return accounts.length
-      ? { pubkey: accounts[0].pubkey, data: accounts[0].account.data as Buffer }
-      : null;
-  } catch (error) {
-    console.error("[fetchUserMint] Error:", error);
-    return null;
-  }
-};
+
 
 export const fetchUserTokenAccount = async (
   connection: Connection,

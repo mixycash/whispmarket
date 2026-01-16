@@ -239,13 +239,31 @@ export default function DepositSol() {
             {/* Balance Display */}
             <div className="flex items-center justify-between text-sm p-3 bg-[var(--surface)] rounded-xl">
                 <div>
-                    <span className="text-[var(--muted)]">Available SOL</span>
-                    <div className="text-lg font-semibold">{solBalance.toFixed(4)} SOL</div>
+                    <span className="text-[var(--muted)]">Available</span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <img
+                            src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
+                            alt="SOL"
+                            width="16"
+                            height="16"
+                            className="rounded-full"
+                        />
+                        <div className="text-lg font-semibold">{solBalance.toFixed(4)} SOL</div>
+                    </div>
                 </div>
                 {wsolBalance > 0 && (
                     <div className="text-right">
-                        <span className="text-[var(--muted)]">wSOL Balance</span>
-                        <div className="text-lg font-semibold">{wsolBalance.toFixed(4)} wSOL</div>
+                        <span className="text-[var(--muted)]">Encrypted</span>
+                        <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                            <div className="text-lg font-semibold">{wsolBalance.toFixed(4)} wSOL</div>
+                            <img
+                                src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
+                                alt="SOL"
+                                width="16"
+                                height="16"
+                                className="rounded-full opacity-80"
+                            />
+                        </div>
                     </div>
                 )}
             </div>

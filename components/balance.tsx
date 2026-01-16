@@ -4,10 +4,10 @@ import { useState, useEffect } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { decrypt } from "@inco/solana-sdk/attested-decrypt";
 import {
-  fetchUserMint,
   fetchUserTokenAccount,
   extractHandle,
 } from "@/utils/constants";
+import { PROTOCOL_INCO_MINT } from "@/lib/protocol";
 
 export default function Balance() {
   const { publicKey, connected, signMessage } = useWallet();
@@ -22,15 +22,14 @@ export default function Balance() {
     setError(null);
 
     try {
-      const mint = await fetchUserMint(connection, publicKey);
-      if (!mint) return setBalance("No mint");
-
+      // Use the shared protocol mint for wSOL confidential tokens
       const acc = await fetchUserTokenAccount(
         connection,
         publicKey,
-        mint.pubkey
+        PROTOCOL_INCO_MINT
       );
-      if (!acc) return setBalance("No account");
+
+      if (!acc) return setBalance("0"); // No account means 0 balance
 
       const handle = extractHandle(acc.data);
       if (handle === BigInt(0)) return setBalance("0");
@@ -63,9 +62,18 @@ export default function Balance() {
   return (
     <div className="mt-8 space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <span className="text-sm font-medium">Balance:</span>
-          <span className="ml-2 font-mono">{balance ?? "****"}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-[var(--muted)]">Confidential Balance:</span>
+          <div className="flex items-center gap-2 bg-[var(--surface)] px-3 py-1.5 rounded-lg border border-[var(--border-subtle)]">
+            <img
+              src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"
+              alt="SOL"
+              width="16"
+              height="16"
+              className="rounded-full"
+            />
+            <span className="font-mono font-semibold">{balance ? `${balance} SOL` : "****"}</span>
+          </div>
         </div>
         <button
           onClick={handleReadBalance}

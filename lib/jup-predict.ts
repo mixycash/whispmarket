@@ -48,6 +48,8 @@ export interface EventMetadata {
     earlyCloseCondition?: string;
 }
 
+export type DataProvider = "jup" | "kalshi";
+
 export interface PredictEvent {
     eventId: string;
     series: string;
@@ -64,6 +66,7 @@ export interface PredictEvent {
     volumeUsd: string;
     closeCondition?: string;
     rulesPdf?: string;
+    provider?: DataProvider;
 }
 
 export interface PaginationInfo {

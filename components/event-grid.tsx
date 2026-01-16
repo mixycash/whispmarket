@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { PredictEvent, Category, fetchEvents, fetchAllEvents, getAllCachedEvents } from "@/lib/jup-predict";
+import { PredictEvent, Category, DataProvider, fetchEvents, fetchAllEvents, getAllCachedEvents } from "@/lib/jup-predict";
 import EventCard from "./event-card";
 import MarketModal from "./market-modal";
 
@@ -26,6 +26,19 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
     { value: "ending_soon", label: "Ending Soon" },
 ];
 
+const PROVIDER_OPTIONS: { value: DataProvider; label: string; icon: string }[] = [
+    { value: "jup", label: "Jupiter", icon: "🪐" },
+    { value: "kalshi", label: "Kalshi", icon: "📊" },
+];
+
+// Fetch Kalshi events from our API route (comprehensive fetch for full category coverage)
+async function fetchKalshiEventsFromAPI(): Promise<PredictEvent[]> {
+    const response = await fetch('/api/kalshi?action=comprehensive-events');
+    if (!response.ok) throw new Error('Failed to fetch Kalshi events');
+    const data = await response.json();
+    return data.data || [];
+}
+
 export default function EventGrid() {
     const [events, setEvents] = useState<PredictEvent[]>([]);
     const [loading, setLoading] = useState(true);
@@ -34,6 +47,7 @@ export default function EventGrid() {
     const [sortBy, setSortBy] = useState<SortOption>("volume");
     const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
     const [status, setStatus] = useState<StatusOption>("active");
+    const [provider, setProvider] = useState<DataProvider>("jup");
     const [selectedEvent, setSelectedEvent] = useState<PredictEvent | null>(null);
     const [cacheLoaded, setCacheLoaded] = useState(false);
     const [visibleCount, setVisibleCount] = useState(50);
@@ -56,34 +70,48 @@ export default function EventGrid() {
         setError(null);
         setVisibleCount(50); // Reset visible count on filter change
         try {
-            // Determine API params based on sort selection
-            let apiSortBy: "volume" | "beginAt" = "volume";
+            let allEvents: PredictEvent[] = [];
 
-            if (sortBy === "newest") {
-                apiSortBy = "beginAt";
+            if (provider === "kalshi") {
+                // Fetch from Kalshi API
+                allEvents = await fetchKalshiEventsFromAPI();
+                // Tag all events with provider
+                allEvents = allEvents.map(e => ({ ...e, provider: 'kalshi' as const }));
+            } else {
+                // Fetch from Jupiter API
+                // Determine API params based on sort selection
+                let apiSortBy: "volume" | "beginAt" = "volume";
+                if (sortBy === "newest") {
+                    apiSortBy = "beginAt";
+                }
+
+                // Fetch 200 events in 2 batches of 100 to avoid API limits
+                const [batch1, batch2] = await Promise.all([
+                    fetchEvents({
+                        includeMarkets: true,
+                        category,
+                        sortBy: apiSortBy,
+                        sortDirection: sortDirection,
+                        start: 0,
+                        end: 100,
+                    }),
+                    fetchEvents({
+                        includeMarkets: true,
+                        category,
+                        sortBy: apiSortBy,
+                        sortDirection: sortDirection,
+                        start: 100,
+                        end: 200,
+                    })
+                ]);
+
+                allEvents = [...batch1.data, ...batch2.data].map(e => ({ ...e, provider: 'jup' as const }));
             }
 
-            // Fetch 200 events in 2 batches of 100 to avoid API limits
-            const [batch1, batch2] = await Promise.all([
-                fetchEvents({
-                    includeMarkets: true,
-                    category,
-                    sortBy: apiSortBy,
-                    sortDirection: sortDirection,
-                    start: 0,
-                    end: 100,
-                }),
-                fetchEvents({
-                    includeMarkets: true,
-                    category,
-                    sortBy: apiSortBy,
-                    sortDirection: sortDirection,
-                    start: 100,
-                    end: 200,
-                })
-            ]);
-
-            const allEvents = [...batch1.data, ...batch2.data];
+            // Filter events based on category (for Kalshi, we filter client-side)
+            if (provider === "kalshi" && category !== "all") {
+                allEvents = allEvents.filter(event => event.category === category);
+            }
 
             // Filter events based on status (Active vs Resolved)
             let filteredEvents = allEvents.filter(event => {
@@ -134,43 +162,47 @@ export default function EventGrid() {
 
             setEvents(filteredEvents);
         } catch (err) {
-            // Try to use cached data on error
-            const cached = getAllCachedEvents();
-            if (cached.length > 0) {
-                const filtered = cached.filter(event => {
-                    if (category !== "all" && event.category !== category) return false;
+            // Try to use cached data on error (Jupiter only)
+            if (provider === "jup") {
+                const cached = getAllCachedEvents();
+                if (cached.length > 0) {
+                    const filtered = cached.filter(event => {
+                        if (category !== "all" && event.category !== category) return false;
 
-                    const hasOpenMarkets = event.markets?.some(m => m.status === "open");
-                    const isClosed = !event.isActive || (event.markets && event.markets.every(m => m.status !== "open"));
+                        const hasOpenMarkets = event.markets?.some(m => m.status === "open");
+                        const isClosed = !event.isActive || (event.markets && event.markets.every(m => m.status !== "open"));
 
-                    return status === "active" ? (event.isActive && hasOpenMarkets) : isClosed;
-                });
-
-                // Apply sort to cached data
-                if (sortBy === "volume") {
-                    filtered.sort((a, b) => {
-                        const valA = (parseInt(a.volumeUsd) || 0);
-                        const valB = (parseInt(b.volumeUsd) || 0);
-                        return sortDirection === 'desc' ? valB - valA : valA - valB;
+                        return status === "active" ? (event.isActive && hasOpenMarkets) : isClosed;
                     });
-                } else if (sortBy === "newest") {
-                    filtered.sort((a, b) => {
-                        const timeA = new Date(a.beginAt || 0).getTime();
-                        const timeB = new Date(b.beginAt || 0).getTime();
-                        return sortDirection === 'desc' ? timeB - timeA : timeA - timeB;
-                    });
+
+                    // Apply sort to cached data
+                    if (sortBy === "volume") {
+                        filtered.sort((a, b) => {
+                            const valA = (parseInt(a.volumeUsd) || 0);
+                            const valB = (parseInt(b.volumeUsd) || 0);
+                            return sortDirection === 'desc' ? valB - valA : valA - valB;
+                        });
+                    } else if (sortBy === "newest") {
+                        filtered.sort((a, b) => {
+                            const timeA = new Date(a.beginAt || 0).getTime();
+                            const timeB = new Date(b.beginAt || 0).getTime();
+                            return sortDirection === 'desc' ? timeB - timeA : timeA - timeB;
+                        });
+                    }
+
+                    setEvents(filtered.slice(0, 200));
+                    setError("Using cached data");
+                } else {
+                    setError("Failed to load markets");
                 }
-
-                setEvents(filtered.slice(0, 200));
-                setError("Using cached data");
             } else {
-                setError("Failed to load markets");
+                setError(`Failed to load ${provider === 'kalshi' ? 'Kalshi' : 'Jupiter'} markets`);
             }
             console.error(err);
         } finally {
             setLoading(false);
         }
-    }, [category, sortBy, status, sortDirection]);
+    }, [category, sortBy, status, sortDirection, provider]);
 
     useEffect(() => {
         loadEvents();
@@ -194,6 +226,23 @@ export default function EventGrid() {
 
                 {/* Filters */}
                 <div className="filters-row">
+                    {/* Data Provider Toggle */}
+                    <div className="filter-group">
+                        <div className="toggle-switch provider-toggle">
+                            {PROVIDER_OPTIONS.map(opt => (
+                                <button
+                                    key={opt.value}
+                                    className={`toggle-option ${provider === opt.value ? 'active' : ''}`}
+                                    onClick={() => setProvider(opt.value)}
+                                    title={`Data from ${opt.label}`}
+                                >
+                                    <span className="provider-icon">{opt.icon}</span>
+                                    <span className="provider-label">{opt.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="sort-group">
                         <div className="filter-group">
                             <span className="filter-label">Sort:</span>
@@ -368,6 +417,32 @@ export default function EventGrid() {
                     background: var(--surface-hover);
                     color: var(--foreground);
                     box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+                }
+
+                .provider-toggle {
+                    gap: 2px;
+                }
+
+                .provider-toggle .toggle-option {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.375rem;
+                    padding: 0.375rem 0.625rem;
+                }
+
+                .provider-icon {
+                    font-size: 0.875rem;
+                    line-height: 1;
+                }
+
+                .provider-label {
+                    font-size: 0.75rem;
+                }
+
+                .provider-toggle .toggle-option.active {
+                    background: linear-gradient(135deg, var(--surface-hover), rgba(99, 102, 241, 0.15));
+                    border: 1px solid rgba(99, 102, 241, 0.3);
+                    margin: -1px;
                 }
 
                 .load-more-container {

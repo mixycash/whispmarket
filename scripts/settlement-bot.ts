@@ -12,14 +12,16 @@
 
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
-import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 
-import { sql } from "../lib/db"; // Use relative path
+import { sql } from "../lib/db";
 import { Bet } from "../lib/schema";
 import { fetchMarketFresh } from "../lib/jup-predict";
 import { simpleTransfer } from "../lib/confidential-transfer";
 import { PROTOCOL_VAULT, PROTOCOL_TREASURY, PROTOCOL_FEE } from "../lib/protocol";
 import { calculateClaimAmount } from "../lib/bet-commitment";
+import { NodeWallet } from "../lib/node-wallet";
+import { parseSecretKey } from "../lib/server-utils";
 
 // Claim timeout: How long to wait before auto-settling unclaimed bets (48 hours)
 const CLAIM_TIMEOUT_MS = 48 * 60 * 60 * 1000;
@@ -27,36 +29,7 @@ const CLAIM_TIMEOUT_MS = 48 * 60 * 60 * 1000;
 // Check interval: How often to look for stale unclaimed bets
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
-// Polyfill for Wallet Adapter compatibility
-interface AnchorWallet {
-    publicKey: PublicKey;
-    signTransaction<T extends Transaction | unknown>(transaction: T): Promise<T>;
-    signAllTransactions<T extends Transaction | unknown>(transactions: T[]): Promise<T[]>;
-}
 
-class NodeWallet implements AnchorWallet {
-    constructor(readonly payer: Keypair) { }
-
-    get publicKey() {
-        return this.payer.publicKey;
-    }
-
-    async signTransaction<T extends Transaction | unknown>(tx: T): Promise<T> {
-        if (tx instanceof Transaction) {
-            tx.sign(this.payer);
-        } // VersionedTransaction handling if needed
-        return tx;
-    }
-
-    async signAllTransactions<T extends Transaction | unknown>(txs: T[]): Promise<T[]> {
-        return txs.map((t) => {
-            if (t instanceof Transaction) {
-                t.sign(this.payer);
-            }
-            return t;
-        });
-    }
-}
 
 // Helpers
 async function getStaleUnclaimedBets(): Promise<Bet[]> {
@@ -155,20 +128,8 @@ async function runBot() {
         "confirmed"
     );
 
-    // Parse secret key
-    if (!process.env.VAULT_SECRET_KEY) {
-        throw new Error("VAULT_SECRET_KEY not found in env");
-    }
-
-    let secretKeyArray: number[];
-    const keyStr = process.env.VAULT_SECRET_KEY.trim();
-    if (keyStr.startsWith('[')) {
-        secretKeyArray = JSON.parse(keyStr);
-    } else {
-        secretKeyArray = keyStr.split(',').map(n => parseInt(n.trim(), 10));
-    }
-    const secretKey = Uint8Array.from(secretKeyArray);
-    const vaultKeypair = Keypair.fromSecretKey(secretKey);
+    // Parse secret key using shared utility
+    const vaultKeypair = parseSecretKey("VAULT_SECRET_KEY");
     const vaultWallet = new NodeWallet(vaultKeypair);
 
     if (vaultKeypair.publicKey.toBase58() !== PROTOCOL_VAULT.toBase58()) {

@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { NATIVE_MINT, getAssociatedTokenAddress, getAccount } from "@solana/spl-token";
 import { encryptValue } from "@inco/solana-sdk/encryption";
 import { hexToBuffer } from "@inco/solana-sdk/utils";
@@ -18,19 +18,10 @@ import { PROTOCOL_VAULT, PROTOCOL_INCO_MINT, MIN_DEPOSIT, MAX_DEPOSIT } from "@/
 import { getProgram, getAllowancePda, extractHandle } from "@/utils/constants";
 import { AnchorWallet } from "@solana/wallet-adapter-react";
 import { sql } from "@/lib/db";
+import { NodeWallet } from "@/lib/node-wallet";
+import { parseSecretKey, checkRateLimit, RATE_LIMITS } from "@/lib/server-utils";
 
-// Server wallet wrapper
-class NodeWallet {
-    constructor(readonly payer: Keypair) { }
-    get publicKey() { return this.payer.publicKey; }
-    async signTransaction<T extends Transaction>(tx: T): Promise<T> {
-        if (tx instanceof Transaction) tx.sign(this.payer);
-        return tx;
-    }
-    async signAllTransactions<T extends Transaction>(txs: T[]): Promise<T[]> {
-        return txs.map(t => { if (t instanceof Transaction) t.sign(this.payer); return t; });
-    }
-}
+
 
 // Tolerance for amount verification (0.1% to account for rent/fees)
 const AMOUNT_TOLERANCE = 0.001;
@@ -58,6 +49,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 { success: false, error: `Maximum deposit is ${MAX_DEPOSIT} SOL (devnet limit)` },
                 { status: 400 }
+            );
+        }
+
+        // Rate limiting - prevent deposit spam
+        const rateLimit = checkRateLimit(`deposit:${wallet}`, RATE_LIMITS.DEPOSIT.maxRequests, RATE_LIMITS.DEPOSIT.windowMs);
+        if (!rateLimit.allowed) {
+            return NextResponse.json(
+                { success: false, error: "Too many deposit requests. Please wait.", retryAfter: Math.ceil(rateLimit.resetIn / 1000) },
+                { status: 429 }
             );
         }
 
@@ -164,23 +164,17 @@ export async function POST(request: NextRequest) {
         }
 
         // Setup vault wallet for minting
-        if (!process.env.VAULT_SECRET_KEY) {
+        let vaultKeypair;
+        try {
+            vaultKeypair = parseSecretKey("VAULT_SECRET_KEY");
+        } catch (e) {
+            console.error("Vault key error:", e);
             return NextResponse.json(
                 { success: false, error: "Server configuration error" },
                 { status: 500 }
             );
         }
 
-        // Parse secret key - handle both JSON array and comma-separated formats
-        let secretKeyArray: number[];
-        const keyStr = process.env.VAULT_SECRET_KEY.trim();
-        if (keyStr.startsWith('[')) {
-            secretKeyArray = JSON.parse(keyStr);
-        } else {
-            secretKeyArray = keyStr.split(',').map(n => parseInt(n.trim(), 10));
-        }
-        const secretKey = Uint8Array.from(secretKeyArray);
-        const vaultKeypair = Keypair.fromSecretKey(secretKey);
         const vaultWallet = new NodeWallet(vaultKeypair);
 
         // === MARK DEPOSIT TX AS USED (before minting to prevent double-use) ===

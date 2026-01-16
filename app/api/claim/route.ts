@@ -11,44 +11,17 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { Connection, Keypair, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { sql } from "@/lib/db";
 import { Bet } from "@/lib/schema";
 import { fetchMarketFresh } from "@/lib/jup-predict";
 import { simpleTransfer } from "@/lib/confidential-transfer";
 import { PROTOCOL_VAULT, PROTOCOL_FEE, PROTOCOL_TREASURY } from "@/lib/protocol";
 import { ClaimProof, calculateClaimAmount } from "@/lib/bet-commitment";
+import { NodeWallet } from "@/lib/node-wallet";
+import { parseSecretKey, checkRateLimit, RATE_LIMITS } from "@/lib/server-utils";
 
-// Server-compatible wallet interface (matches wallet-adapter's AnchorWallet)
-interface ServerWallet {
-    publicKey: PublicKey;
-    signTransaction<T extends Transaction | VersionedTransaction>(transaction: T): Promise<T>;
-    signAllTransactions<T extends Transaction | VersionedTransaction>(transactions: T[]): Promise<T[]>;
-}
 
-class NodeWallet implements ServerWallet {
-    constructor(readonly payer: Keypair) { }
-
-    get publicKey() {
-        return this.payer.publicKey;
-    }
-
-    async signTransaction<T extends Transaction | VersionedTransaction>(tx: T): Promise<T> {
-        if (tx instanceof Transaction) {
-            tx.sign(this.payer);
-        }
-        return tx;
-    }
-
-    async signAllTransactions<T extends Transaction | VersionedTransaction>(txs: T[]): Promise<T[]> {
-        return txs.map((t) => {
-            if (t instanceof Transaction) {
-                t.sign(this.payer);
-            }
-            return t;
-        });
-    }
-}
 
 // Helper to map DB row to Bet
 function mapRowToBet(row: Record<string, unknown>): Bet {
@@ -113,6 +86,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 { success: false, error: "Missing required fields" },
                 { status: 400 }
+            );
+        }
+
+        // Rate limiting - prevent claim spam
+        const rateLimit = checkRateLimit(`claim:${walletAddress}`, RATE_LIMITS.CLAIM.maxRequests, RATE_LIMITS.CLAIM.windowMs);
+        if (!rateLimit.allowed) {
+            return NextResponse.json(
+                { success: false, error: "Too many claim requests. Please wait.", retryAfter: Math.ceil(rateLimit.resetIn / 1000) },
+                { status: 429 }
             );
         }
 
@@ -242,8 +224,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Setup vault wallet
-        if (!process.env.VAULT_SECRET_KEY) {
+        let vaultKeypair;
+        try {
+            vaultKeypair = parseSecretKey("VAULT_SECRET_KEY");
+        } catch (e) {
             await sql`UPDATE bets SET claim_lock = NULL WHERE tx = ${betTx}`;
+            console.error("Vault key error:", e);
             return NextResponse.json(
                 { success: false, error: "Server configuration error" },
                 { status: 500 }
@@ -255,16 +241,6 @@ export async function POST(request: NextRequest) {
             "confirmed"
         );
 
-        // Parse secret key - handle both JSON array and comma-separated formats
-        let secretKeyArray: number[];
-        const keyStr = process.env.VAULT_SECRET_KEY.trim();
-        if (keyStr.startsWith('[')) {
-            secretKeyArray = JSON.parse(keyStr);
-        } else {
-            secretKeyArray = keyStr.split(',').map(n => parseInt(n.trim(), 10));
-        }
-        const secretKey = Uint8Array.from(secretKeyArray);
-        const vaultKeypair = Keypair.fromSecretKey(secretKey);
         const vaultWallet = new NodeWallet(vaultKeypair);
 
         // Verify vault key matches
@@ -361,6 +337,15 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
             { error: "Missing betTx or wallet" },
             { status: 400 }
+        );
+    }
+
+    // Rate limiting for status checks
+    const rateLimit = checkRateLimit(`status:${walletAddress}`, RATE_LIMITS.STATUS.maxRequests, RATE_LIMITS.STATUS.windowMs);
+    if (!rateLimit.allowed) {
+        return NextResponse.json(
+            { error: "Too many requests. Please wait.", retryAfter: Math.ceil(rateLimit.resetIn / 1000) },
+            { status: 429 }
         );
     }
 

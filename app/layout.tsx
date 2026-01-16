@@ -3,6 +3,7 @@ import { Urbanist, Outfit } from "next/font/google";
 import "./globals.css";
 import WalletProvider from "@/wallet/provider";
 import { CryptoProvider } from "@/app/providers/CryptoProvider";
+import ActivityBar from "@/components/activity-bar";
 
 const urbanist = Urbanist({
   variable: "--font-urbanist",
@@ -30,7 +31,10 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${urbanist.variable} ${outfit.variable} font-sans antialiased`} suppressHydrationWarning>
         <WalletProvider>
-          <CryptoProvider>{children}</CryptoProvider>
+          <CryptoProvider>
+            <ActivityBar />
+            {children}
+          </CryptoProvider>
         </WalletProvider>
       </body>
     </html>

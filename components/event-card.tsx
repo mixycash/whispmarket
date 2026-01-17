@@ -119,11 +119,6 @@ export default function EventCard({ event, onClick }: EventCardProps) {
             {/* Footer */}
             <div className="card-footer">
                 <span className="card-volume">{formatVolume(event.volumeUsd)} Vol</span>
-                {event.provider && (
-                    <span className={`provider-badge ${event.provider}`}>
-                        {event.provider === 'kalshi' ? '📊' : '🪐'}
-                    </span>
-                )}
                 <span className="card-category" style={{ marginLeft: 'auto' }}>{event.category}</span>
             </div>
 

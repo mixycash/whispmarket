@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { PredictEvent, Category, DataProvider, fetchEvents, fetchAllEvents, getAllCachedEvents } from "@/lib/jup-predict";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { PredictEvent, Category, fetchEvents, fetchAllEvents, getAllCachedEvents } from "@/lib/jup-predict";
 import EventCard from "./event-card";
 import MarketModal from "./market-modal";
 
@@ -10,10 +10,7 @@ const CATEGORIES: { value: Category; label: string }[] = [
     { value: "crypto", label: "Crypto" },
     { value: "politics", label: "Politics" },
     { value: "sports", label: "Sports" },
-    { value: "esports", label: "Esports" },
     { value: "economics", label: "Economics" },
-    { value: "tech", label: "Tech" },
-    { value: "culture", label: "Culture" },
 ];
 
 type SortOption = "volume" | "newest" | "ending_soon";
@@ -26,19 +23,6 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
     { value: "ending_soon", label: "Ending Soon" },
 ];
 
-const PROVIDER_OPTIONS: { value: DataProvider; label: string; icon: string }[] = [
-    { value: "jup", label: "Jupiter", icon: "🪐" },
-    { value: "kalshi", label: "Kalshi", icon: "📊" },
-];
-
-// Fetch Kalshi events from our API route (comprehensive fetch for full category coverage)
-async function fetchKalshiEventsFromAPI(): Promise<PredictEvent[]> {
-    const response = await fetch('/api/kalshi?action=comprehensive-events');
-    if (!response.ok) throw new Error('Failed to fetch Kalshi events');
-    const data = await response.json();
-    return data.data || [];
-}
-
 export default function EventGrid() {
     const [events, setEvents] = useState<PredictEvent[]>([]);
     const [loading, setLoading] = useState(true);
@@ -47,71 +31,84 @@ export default function EventGrid() {
     const [sortBy, setSortBy] = useState<SortOption>("volume");
     const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
     const [status, setStatus] = useState<StatusOption>("active");
-    const [provider, setProvider] = useState<DataProvider>("jup");
     const [selectedEvent, setSelectedEvent] = useState<PredictEvent | null>(null);
     const [cacheLoaded, setCacheLoaded] = useState(false);
-    const [visibleCount, setVisibleCount] = useState(50);
+    const [visibleCount, setVisibleCount] = useState(36);
+    const prefetchStarted = useRef(false);
 
-    // Background fetch all categories on app load for settlement cache
+    // Background prefetch ALL events on app load for fast filtering
     useEffect(() => {
-        const loadCache = async () => {
+        if (prefetchStarted.current) return;
+        prefetchStarted.current = true;
+
+        const prefetchAll = async () => {
+            console.log('[Prefetch] Starting background prefetch...');
+            const startTime = Date.now();
+
             try {
                 await fetchAllEvents();
-                setCacheLoaded(true);
+                console.log('[Prefetch] ✓ Jupiter cache loaded');
             } catch (e) {
-                console.warn("Background cache load failed:", e);
+                console.warn('[Prefetch] Jupiter cache failed:', e);
             }
+
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            console.log(`[Prefetch] ✓ Prefetch complete in ${elapsed}s`);
+            setCacheLoaded(true);
         };
-        loadCache();
+
+        prefetchAll();
     }, []);
 
     const loadEvents = useCallback(async () => {
         setLoading(true);
         setError(null);
-        setVisibleCount(50); // Reset visible count on filter change
+        setVisibleCount(36); // Reset visible count on filter change
         try {
-            let allEvents: PredictEvent[] = [];
-
-            if (provider === "kalshi") {
-                // Fetch from Kalshi API
-                allEvents = await fetchKalshiEventsFromAPI();
-                // Tag all events with provider
-                allEvents = allEvents.map(e => ({ ...e, provider: 'kalshi' as const }));
-            } else {
-                // Fetch from Jupiter API
-                // Determine API params based on sort selection
-                let apiSortBy: "volume" | "beginAt" = "volume";
-                if (sortBy === "newest") {
-                    apiSortBy = "beginAt";
-                }
-
-                // Fetch 200 events in 2 batches of 100 to avoid API limits
-                const [batch1, batch2] = await Promise.all([
-                    fetchEvents({
-                        includeMarkets: true,
-                        category,
-                        sortBy: apiSortBy,
-                        sortDirection: sortDirection,
-                        start: 0,
-                        end: 100,
-                    }),
-                    fetchEvents({
-                        includeMarkets: true,
-                        category,
-                        sortBy: apiSortBy,
-                        sortDirection: sortDirection,
-                        start: 100,
-                        end: 200,
-                    })
-                ]);
-
-                allEvents = [...batch1.data, ...batch2.data].map(e => ({ ...e, provider: 'jup' as const }));
+            // Determine API params based on sort selection
+            let apiSortBy: "volume" | "beginAt" = "volume";
+            if (sortBy === "newest") {
+                apiSortBy = "beginAt";
             }
 
-            // Filter events based on category (for Kalshi, we filter client-side)
-            if (provider === "kalshi" && category !== "all") {
-                allEvents = allEvents.filter(event => event.category === category);
-            }
+            // Fetch 400 events in 4 parallel batches for comprehensive coverage
+            const batchPromises = [
+                fetchEvents({
+                    includeMarkets: true,
+                    category,
+                    sortBy: apiSortBy,
+                    sortDirection: sortDirection,
+                    start: 0,
+                    end: 99,
+                }),
+                fetchEvents({
+                    includeMarkets: true,
+                    category,
+                    sortBy: apiSortBy,
+                    sortDirection: sortDirection,
+                    start: 100,
+                    end: 199,
+                }),
+                fetchEvents({
+                    includeMarkets: true,
+                    category,
+                    sortBy: apiSortBy,
+                    sortDirection: sortDirection,
+                    start: 200,
+                    end: 299,
+                }),
+                fetchEvents({
+                    includeMarkets: true,
+                    category,
+                    sortBy: apiSortBy,
+                    sortDirection: sortDirection,
+                    start: 300,
+                    end: 399,
+                }),
+            ];
+
+            const batches = await Promise.all(batchPromises);
+            let allEvents = batches.flatMap(b => b.data).map(e => ({ ...e, provider: 'jup' as const }));
 
             // Filter events based on status (Active vs Resolved)
             let filteredEvents = allEvents.filter(event => {
@@ -128,20 +125,21 @@ export default function EventGrid() {
             });
 
             // Client-side sorting for "Ending Soon" or refined ordering
+            // Find earliest closing active market for each event
+            const getCloseTime = (e: PredictEvent) => {
+                const openMarkets = e.markets?.filter(m => m.status === "open") || [];
+                if (openMarkets.length === 0) return Number.MAX_SAFE_INTEGER;
+                const times = openMarkets.map(m => {
+                    let t = m.closeTime || m.metadata?.closeTime || 0;
+                    // normalize seconds to ms
+                    if (t < 10000000000) t *= 1000;
+                    return t;
+                });
+                return Math.min(...times);
+            };
+
             if (sortBy === "ending_soon") {
                 filteredEvents.sort((a, b) => {
-                    // Find earliest closing active market for each event
-                    const getCloseTime = (e: PredictEvent) => {
-                        const openMarkets = e.markets?.filter(m => m.status === "open") || [];
-                        if (openMarkets.length === 0) return Number.MAX_SAFE_INTEGER;
-                        const times = openMarkets.map(m => {
-                            let t = m.closeTime || m.metadata?.closeTime || 0;
-                            // normalize seconds to ms
-                            if (t < 10000000000) t *= 1000;
-                            return t;
-                        });
-                        return Math.min(...times);
-                    };
                     const diff = getCloseTime(a) - getCloseTime(b);
                     return sortDirection === 'asc' ? diff : -diff;
                 });
@@ -162,47 +160,43 @@ export default function EventGrid() {
 
             setEvents(filteredEvents);
         } catch (err) {
-            // Try to use cached data on error (Jupiter only)
-            if (provider === "jup") {
-                const cached = getAllCachedEvents();
-                if (cached.length > 0) {
-                    const filtered = cached.filter(event => {
-                        if (category !== "all" && event.category !== category) return false;
+            // Try to use cached data on error
+            const cached = getAllCachedEvents();
+            if (cached.length > 0) {
+                const filtered = cached.filter(event => {
+                    if (category !== "all" && event.category !== category) return false;
 
-                        const hasOpenMarkets = event.markets?.some(m => m.status === "open");
-                        const isClosed = !event.isActive || (event.markets && event.markets.every(m => m.status !== "open"));
+                    const hasOpenMarkets = event.markets?.some(m => m.status === "open");
+                    const isClosed = !event.isActive || (event.markets && event.markets.every(m => m.status !== "open"));
 
-                        return status === "active" ? (event.isActive && hasOpenMarkets) : isClosed;
+                    return status === "active" ? (event.isActive && hasOpenMarkets) : isClosed;
+                });
+
+                // Apply sort to cached data
+                if (sortBy === "volume") {
+                    filtered.sort((a, b) => {
+                        const valA = (parseInt(a.volumeUsd) || 0);
+                        const valB = (parseInt(b.volumeUsd) || 0);
+                        return sortDirection === 'desc' ? valB - valA : valA - valB;
                     });
-
-                    // Apply sort to cached data
-                    if (sortBy === "volume") {
-                        filtered.sort((a, b) => {
-                            const valA = (parseInt(a.volumeUsd) || 0);
-                            const valB = (parseInt(b.volumeUsd) || 0);
-                            return sortDirection === 'desc' ? valB - valA : valA - valB;
-                        });
-                    } else if (sortBy === "newest") {
-                        filtered.sort((a, b) => {
-                            const timeA = new Date(a.beginAt || 0).getTime();
-                            const timeB = new Date(b.beginAt || 0).getTime();
-                            return sortDirection === 'desc' ? timeB - timeA : timeA - timeB;
-                        });
-                    }
-
-                    setEvents(filtered.slice(0, 200));
-                    setError("Using cached data");
-                } else {
-                    setError("Failed to load markets");
+                } else if (sortBy === "newest") {
+                    filtered.sort((a, b) => {
+                        const timeA = new Date(a.beginAt || 0).getTime();
+                        const timeB = new Date(b.beginAt || 0).getTime();
+                        return sortDirection === 'desc' ? timeB - timeA : timeA - timeB;
+                    });
                 }
+
+                setEvents(filtered.slice(0, 200));
+                setError("Using cached data");
             } else {
-                setError(`Failed to load ${provider === 'kalshi' ? 'Kalshi' : 'Jupiter'} markets`);
+                setError("Failed to load markets");
             }
             console.error(err);
         } finally {
             setLoading(false);
         }
-    }, [category, sortBy, status, sortDirection, provider]);
+    }, [category, sortBy, status, sortDirection]);
 
     useEffect(() => {
         loadEvents();
@@ -226,23 +220,6 @@ export default function EventGrid() {
 
                 {/* Filters */}
                 <div className="filters-row">
-                    {/* Data Provider Toggle */}
-                    <div className="filter-group">
-                        <div className="toggle-switch provider-toggle">
-                            {PROVIDER_OPTIONS.map(opt => (
-                                <button
-                                    key={opt.value}
-                                    className={`toggle-option ${provider === opt.value ? 'active' : ''}`}
-                                    onClick={() => setProvider(opt.value)}
-                                    title={`Data from ${opt.label}`}
-                                >
-                                    <span className="provider-icon">{opt.icon}</span>
-                                    <span className="provider-label">{opt.label}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
                     <div className="sort-group">
                         <div className="filter-group">
                             <span className="filter-label">Sort:</span>
@@ -335,8 +312,8 @@ export default function EventGrid() {
                     background: var(--surface);
                     border: 1px solid var(--border-subtle);
                     border-radius: 8px;
-                    padding: 0 0 0 0.5rem; /* Left padding only */
-                    height: 38px; /* Fixed height to match other inputs */
+                    padding: 0 0 0 0.5rem;
+                    height: 38px;
                 }
 
                 .filter-group {
@@ -358,7 +335,7 @@ export default function EventGrid() {
                     color: var(--foreground);
                     border: none;
                     border-radius: 0;
-                    padding: 0.25rem 1.5rem 0.25rem 0.5rem;
+                    padding: 0.25rem 1rem 0.25rem 0.5rem;
                     font-size: 0.8125rem;
                     cursor: pointer;
                     outline: none;
@@ -376,8 +353,8 @@ export default function EventGrid() {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    height: 100%; /* Fill container height */
-                    padding: 0 0.5rem; /* Add sufficient padding area */
+                    height: 100%;
+                    padding: 0 0.5rem;
                     background: transparent;
                     border: none;
                     color: var(--muted);
@@ -419,54 +396,54 @@ export default function EventGrid() {
                     box-shadow: 0 1px 2px rgba(0,0,0,0.1);
                 }
 
-                .provider-toggle {
-                    gap: 2px;
-                }
-
-                .provider-toggle .toggle-option {
-                    display: flex;
-                    align-items: center;
-                    gap: 0.375rem;
-                    padding: 0.375rem 0.625rem;
-                }
-
-                .provider-icon {
-                    font-size: 0.875rem;
-                    line-height: 1;
-                }
-
-                .provider-label {
-                    font-size: 0.75rem;
-                }
-
-                .provider-toggle .toggle-option.active {
-                    background: linear-gradient(135deg, var(--surface-hover), rgba(99, 102, 241, 0.15));
-                    border: 1px solid rgba(99, 102, 241, 0.3);
-                    margin: -1px;
-                }
-
                 .load-more-container {
                     display: flex;
-                    justify-content: center;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 0.75rem;
                     margin-top: 2rem;
+                    padding: 1.5rem;
                     width: 100%;
                 }
 
+                .pagination-info {
+                    font-size: 0.875rem;
+                    color: var(--muted);
+                }
+
+                .pagination-info strong {
+                    color: var(--foreground);
+                }
+
                 .load-more-btn {
-                    background: var(--surface);
+                    background: linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%);
                     border: 1px solid var(--border-subtle);
                     color: var(--foreground);
-                    padding: 0.75rem 2rem;
-                    border-radius: 8px;
+                    padding: 0.875rem 2.5rem;
+                    border-radius: 12px;
                     font-weight: 600;
+                    font-size: 0.9375rem;
                     cursor: pointer;
                     transition: all 0.2s;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
                 }
 
                 .load-more-btn:hover {
-                    background: var(--surface-hover);
-                    transform: translateY(-1px);
-                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                    background: linear-gradient(135deg, var(--surface-hover) 0%, rgba(99, 102, 241, 0.15) 100%);
+                    border-color: rgba(99, 102, 241, 0.3);
+                    transform: translateY(-2px);
+                    box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.2);
+                }
+
+                .load-more-btn .count-badge {
+                    background: rgba(99, 102, 241, 0.2);
+                    color: var(--primary);
+                    padding: 0.125rem 0.5rem;
+                    border-radius: 999px;
+                    font-size: 0.75rem;
+                    font-weight: 700;
                 }
             `}</style>
 
@@ -498,14 +475,20 @@ export default function EventGrid() {
                         />
                     ))}
 
-                    {events.length > visibleCount && (
+                    {events.length > 0 && (
                         <div className="load-more-container">
-                            <button
-                                className="load-more-btn"
-                                onClick={() => setVisibleCount(prev => prev + 50)}
-                            >
-                                Load More
-                            </button>
+                            <p className="pagination-info">
+                                Showing <strong>{Math.min(visibleCount, events.length)}</strong> of <strong>{events.length}</strong> markets
+                            </p>
+                            {events.length > visibleCount && (
+                                <button
+                                    className="load-more-btn"
+                                    onClick={() => setVisibleCount(prev => Math.min(prev + 36, events.length))}
+                                >
+                                    Load More
+                                    <span className="count-badge">+{Math.min(36, events.length - visibleCount)}</span>
+                                </button>
+                            )}
                         </div>
                     )}
 

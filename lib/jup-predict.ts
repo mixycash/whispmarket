@@ -48,7 +48,8 @@ export interface EventMetadata {
     earlyCloseCondition?: string;
 }
 
-export type DataProvider = "jup" | "kalshi";
+// Data provider type (Jupiter is the sole provider)
+export type DataProvider = "jup";
 
 export interface PredictEvent {
     eventId: string;
@@ -81,7 +82,7 @@ export interface EventsResponse {
     pagination: PaginationInfo;
 }
 
-export type Category = "all" | "crypto" | "sports" | "politics" | "esports" | "culture" | "economics" | "tech";
+export type Category = "all" | "crypto" | "sports" | "politics" | "economics";
 export type SortBy = "volume" | "beginAt";
 export type SortDirection = "asc" | "desc";
 export type Filter = "new" | "live" | "trending";
@@ -235,12 +236,27 @@ export async function fetchEvents(params: FetchEventsParams = {}): Promise<Event
 }
 
 // Fetch all events across all categories and cache them for settlement
-const ALL_CATEGORIES: Category[] = ["crypto", "sports", "politics", "esports", "culture", "economics", "tech"];
+const ALL_CATEGORIES: Category[] = ["crypto", "sports", "politics", "economics"];
 
-// Configuration for deep fetching
+// Configuration for fetching - optimized for maximum coverage
 const BATCH_SIZE = 100; // Events per API request (0-99 = 100 events)
-const MAX_EVENTS_PER_CATEGORY = 500; // Maximum events to fetch per category
-const MAX_CONCURRENT_REQUESTS = 3; // Limit concurrent requests to avoid rate limiting
+const MAX_EVENTS_PER_CATEGORY = 300; // Maximum events to fetch per category (balanced for speed)
+const MAX_CONCURRENT_REQUESTS = 4; // Concurrent category fetches (Jupiter API handles this well)
+const QUICK_FETCH_PER_CATEGORY = 100; // Events per category for initial quick load
+
+// Check if cache is still fresh
+export function isCacheFresh(): boolean {
+    return memoryCache.events.size > 0 && Date.now() - memoryCache.lastUpdated < CACHE_TTL;
+}
+
+// Get cache stats for debugging
+export function getCacheStats(): { events: number; markets: number; age: number } {
+    return {
+        events: memoryCache.events.size,
+        markets: memoryCache.markets.size,
+        age: Math.round((Date.now() - memoryCache.lastUpdated) / 1000),
+    };
+}
 
 // Helper: delay between requests
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -331,15 +347,25 @@ export async function fetchAllEvents(): Promise<PredictEvent[]> {
     return allEvents;
 }
 
-// Quick fetch for UI (fewer events, faster response)
+// Quick fetch for UI - balanced for speed and coverage
 export async function fetchEventsQuick(): Promise<PredictEvent[]> {
+    // Return cached data if fresh
+    if (isCacheFresh() && memoryCache.events.size > 100) {
+        console.log(`[Cache] Quick load: returning ${memoryCache.events.size} cached events`);
+        return Array.from(memoryCache.events.values());
+    }
+
+    console.log(`[Cache] Quick fetch: ${QUICK_FETCH_PER_CATEGORY} events per category...`);
+    const startTime = Date.now();
+
+    // Fetch all categories in parallel for speed
     const promises = ALL_CATEGORIES.map(async (category) => {
         try {
             const response = await fetchEvents({
                 includeMarkets: true,
                 category,
                 start: 0,
-                end: 49,
+                end: QUICK_FETCH_PER_CATEGORY - 1,
                 sortBy: "volume",
                 sortDirection: "desc",
             });
@@ -352,7 +378,11 @@ export async function fetchEventsQuick(): Promise<PredictEvent[]> {
 
     const results = await Promise.all(promises);
     const allEvents = results.flat();
-    console.log(`[Cache] Quick load: ${allEvents.length} events`);
+
+    const totalMarkets = allEvents.reduce((sum, e) => sum + (e.markets?.length || 0), 0);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    console.log(`[Cache] ✓ Quick load: ${allEvents.length} events with ${totalMarkets} markets in ${elapsed}s`);
     return allEvents;
 }
 

@@ -339,6 +339,14 @@ export async function fetchAllEvents(): Promise<PredictEvent[]> {
         allEvents.push(...batchResults.flat());
     }
 
+    // Also fetch popular searches to ensure we don't miss top events
+    try {
+        const popularEvents = await fetchPopularEvents();
+        allEvents.push(...popularEvents);
+    } catch (e) {
+        console.warn("[Cache] Failed to fetch popular events:", e);
+    }
+
     // Count total markets
     const totalMarkets = allEvents.reduce((sum, e) => sum + (e.markets?.length || 0), 0);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -437,10 +445,10 @@ export function searchEvents(query: string): PredictEvent[] {
     );
 }
 
-// Search events via API (server-side, better quality)
 export interface SearchEventsParams {
     query: string;
     limit?: number; // 1-20, default varies
+    includeMarkets?: boolean;
 }
 
 export async function searchEventsAPI(params: SearchEventsParams): Promise<PredictEvent[]> {
@@ -450,6 +458,9 @@ export async function searchEventsAPI(params: SearchEventsParams): Promise<Predi
     searchParams.set("query", params.query);
     if (params.limit !== undefined) {
         searchParams.set("limit", String(Math.min(20, Math.max(1, params.limit))));
+    }
+    if (params.includeMarkets) {
+        searchParams.set("includeMarkets", "true");
     }
 
     const res = await fetch(`${API_BASE}/events/search?${searchParams.toString()}`, {
@@ -466,6 +477,34 @@ export async function searchEventsAPI(params: SearchEventsParams): Promise<Predi
     saveCache();
 
     return response.data;
+}
+
+// Fetch popular events (Leagues/Keywords) to ensure coverage
+const POPULAR_SEARCHES = ["NBA", "NFL", "EPL", "UFC", "F1", "Champions League", "Bitcoin", "Solana"];
+
+export async function fetchPopularEvents(): Promise<PredictEvent[]> {
+    console.log(`[Cache] Fetching popular search terms to boost coverage...`);
+    const allEvents: PredictEvent[] = [];
+
+    // Run searches in parallel
+    const promises = POPULAR_SEARCHES.map(async (query) => {
+        try {
+            return await searchEventsAPI({
+                query,
+                limit: 20,
+                includeMarkets: true
+            });
+        } catch (e) {
+            console.warn(`[Popular] Failed search for '${query}':`, e);
+            return [];
+        }
+    });
+
+    const results = await Promise.all(promises);
+    allEvents.push(...results.flat());
+
+    console.log(`[Cache] ✓ Loaded ${allEvents.length} popular search events`);
+    return allEvents;
 }
 
 // Fetch a single event by ID

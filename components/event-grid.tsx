@@ -34,6 +34,7 @@ export default function EventGrid() {
     const [selectedEvent, setSelectedEvent] = useState<PredictEvent | null>(null);
     const [cacheLoaded, setCacheLoaded] = useState(false);
     const [visibleCount, setVisibleCount] = useState(36);
+    const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
     const prefetchStarted = useRef(false);
 
     // Background prefetch ALL events on app load for fast filtering
@@ -108,7 +109,26 @@ export default function EventGrid() {
             ];
 
             const batches = await Promise.all(batchPromises);
-            let allEvents = batches.flatMap(b => b.data).map(e => ({ ...e, provider: 'jup' as const }));
+            const apiEvents = batches.flatMap(b => b.data).map(e => ({ ...e, provider: 'jup' as const }));
+
+            // Merge with cached events to ensure we show popular items (from background fetch) 
+            // that might be missed by the standard API pagination
+            const cachedEvents = getAllCachedEvents();
+            const cachedMatchingParams = cachedEvents.filter(e => {
+                // Filter by category
+                if (category !== "all" && e.category.toLowerCase() !== category.toLowerCase()) return false;
+                return true;
+            });
+
+            // Dedup by eventId, preferring API (fresh) data
+            const eventMap = new Map<string, PredictEvent>();
+
+            // Add cached first
+            cachedMatchingParams.forEach(e => eventMap.set(e.eventId, e));
+            // Overwrite with fresh API data
+            apiEvents.forEach(e => eventMap.set(e.eventId, e));
+
+            const allEvents = Array.from(eventMap.values());
 
             // Filter events based on status (Active vs Resolved)
             let filteredEvents = allEvents.filter(event => {
@@ -200,7 +220,58 @@ export default function EventGrid() {
 
     useEffect(() => {
         loadEvents();
-    }, [loadEvents]);
+    }, [loadEvents, cacheLoaded]);
+
+    // Derived state: Get unique subcategories/leagues from the current event list
+    // Filter out internal "KX" codes and invalid values
+    // Sort by popularity then alphabetically
+    const POPULARITY_ORDER = ["nba", "nfl", "ufc", "epl", "ucl", "tennis", "cfb", "laliga", "seriea", "mlb", "nhl"];
+
+    const uniqueSubcategories = Array.from(new Set(
+        events
+            .map(e => e.subcategory || e.series || "")
+            .filter(s => {
+                const val = s?.trim();
+                if (!val || val === "null" || val.startsWith("KX")) return false;
+                if (category === "sports") {
+                    // Strict whitelist for sports to avoid showing pollution like politics/internal codes
+                    return POPULARITY_ORDER.includes(val.toLowerCase());
+                }
+                return true;
+            })
+    )).sort((a, b) => {
+        const idxA = POPULARITY_ORDER.indexOf(a.toLowerCase());
+        const idxB = POPULARITY_ORDER.indexOf(b.toLowerCase());
+
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+
+        return a.localeCompare(b);
+    });
+
+    const formatSubcategory = (s: string) => {
+        const lower = s.toLowerCase();
+        const upperMap: Record<string, string> = {
+            "nba": "NBA", "nfl": "NFL", "epl": "EPL", "ucl": "UCL", "ufc": "UFC",
+            "cfb": "CFB", "mlb": "MLB", "nhl": "NHL", "tennis": "Tennis"
+        };
+        if (upperMap[lower]) return upperMap[lower];
+        if (lower === "laliga") return "La Liga";
+        if (lower === "seriea") return "Serie A";
+        if (lower === "bundesliga") return "Bundesliga";
+        return s.charAt(0).toUpperCase() + s.slice(1);
+    };
+
+    // Derived state: Filter events by selected subcategory
+    const filteredEvents = selectedSubcategory
+        ? events.filter(e => (e.subcategory === selectedSubcategory) || (e.series === selectedSubcategory))
+        : events;
+
+    // Reset subcategory when main category changes
+    useEffect(() => {
+        setSelectedSubcategory(null);
+    }, [category]);
 
     return (
         <div className="event-grid-container">
@@ -217,6 +288,8 @@ export default function EventGrid() {
                         </button>
                     ))}
                 </div>
+
+
 
                 {/* Filters */}
                 <div className="filters-row">
@@ -276,13 +349,34 @@ export default function EventGrid() {
                 </div>
             </div>
 
+            {/* Subcategory / League Filters (Subtext) */}
+            {uniqueSubcategories.length > 0 && category === "sports" && (
+                <div className="subcategory-pills">
+                    <button
+                        className={`subcategory-pill ${selectedSubcategory === null ? "active" : ""}`}
+                        onClick={() => setSelectedSubcategory(null)}
+                    >
+                        All
+                    </button>
+                    {uniqueSubcategories.map(sub => (
+                        <button
+                            key={sub}
+                            className={`subcategory-pill ${selectedSubcategory === sub ? "active" : ""}`}
+                            onClick={() => setSelectedSubcategory(sub)}
+                        >
+                            {formatSubcategory(sub)}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             <style jsx>{`
                 .toolbar-container {
                     display: flex;
                     flex-direction: column;
                     gap: 1rem;
                     margin-top: 1.5rem;
-                    margin-bottom: 2rem;
+                    margin-bottom: 1rem;
                 }
                 
                 @media (min-width: 768px) {
@@ -309,17 +403,24 @@ export default function EventGrid() {
                     display: flex;
                     align-items: center;
                     gap: 0;
-                    background: var(--surface);
+                    background: transparent;
                     border: 1px solid var(--border-subtle);
                     border-radius: 8px;
-                    padding: 0 0 0 0.5rem;
-                    height: 38px;
+                    padding: 0;
+                    height: 36px;
+                    overflow: hidden;
+                    transition: border-color 0.2s;
+                }
+                .sort-group:hover {
+                    border-color: var(--border);
                 }
 
                 .filter-group {
                     display: flex;
                     align-items: center;
-                    gap: 0.5rem;
+                    gap: 0;
+                    height: 100%;
+                    position: relative;
                 }
 
                 .filter-label {
@@ -327,7 +428,11 @@ export default function EventGrid() {
                     color: var(--muted);
                     white-space: nowrap;
                     font-weight: 500;
-                    margin-left: 0.5rem;
+                    padding-left: 0.875rem;
+                    margin: 0;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    pointer-events: none; /* Let clicks pass through if overlapping, though flex layout handles this */
                 }
 
                 .filter-select {
@@ -335,18 +440,21 @@ export default function EventGrid() {
                     color: var(--foreground);
                     border: none;
                     border-radius: 0;
-                    padding: 0.25rem 1rem 0.25rem 0.5rem;
+                    padding: 0 0.875rem 0 0.5rem;
                     font-size: 0.8125rem;
                     cursor: pointer;
                     outline: none;
                     font-weight: 600;
+                    height: 100%;
+                    appearance: none;
                 }
                 .filter-select:focus {
                     box-shadow: none;
                 }
                 .filter-select option {
-                    background-color: var(--surface);
+                    background-color: var(--background);
                     color: var(--foreground);
+                    padding: 0.5rem;
                 }
 
                 .sort-direction-btn {
@@ -354,32 +462,31 @@ export default function EventGrid() {
                     align-items: center;
                     justify-content: center;
                     height: 100%;
-                    padding: 0 0.5rem;
+                    width: 32px;
                     background: transparent;
                     border: none;
                     color: var(--muted);
                     cursor: pointer;
                     transition: all 0.2s;
                     border-left: 1px solid var(--border-subtle);
-                    margin-left: 0;
-                    border-top-right-radius: 7px;
-                    border-bottom-right-radius: 7px;
+                    margin: 0;
                 }
                 .sort-direction-btn:hover {
                     color: var(--foreground);
-                    background: rgba(255,255,255,0.05);
+                    background: var(--surface-hover);
                 }
 
                 .toggle-switch {
                     display: flex;
-                    background: var(--surface);
+                    background: transparent;
                     border: 1px solid var(--border-subtle);
                     border-radius: 8px;
                     padding: 2px;
+                    height: 36px;
                 }
 
                 .toggle-option {
-                    padding: 0.375rem 0.75rem;
+                    padding: 0 1rem;
                     border-radius: 6px;
                     font-size: 0.75rem;
                     font-weight: 600;
@@ -388,6 +495,9 @@ export default function EventGrid() {
                     cursor: pointer;
                     background: transparent;
                     border: none;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                 }
 
                 .toggle-option.active {
@@ -445,6 +555,43 @@ export default function EventGrid() {
                     font-size: 0.75rem;
                     font-weight: 700;
                 }
+
+                .subcategory-pills {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.5rem;
+                    margin-top: 0;
+                    margin-bottom: 1.5rem;
+                    width: 100%;
+                }
+
+                .subcategory-pill {
+                    background: transparent;
+                    border: 1px solid var(--border-subtle);
+                    color: var(--muted);
+                    padding: 0.25rem 0.875rem;
+                    border-radius: 6px;
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    white-space: nowrap;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+
+                .subcategory-pill:hover {
+                    border-color: var(--border);
+                    color: var(--foreground);
+                    background: var(--surface-hover);
+                    transform: translateY(-1px);
+                }
+
+                .subcategory-pill.active {
+                    background: var(--foreground);
+                    border-color: var(--foreground);
+                    color: var(--background);
+                }
             `}</style>
 
             {/* Loading state */}
@@ -467,7 +614,7 @@ export default function EventGrid() {
             {/* Events grid */}
             {!loading && (
                 <div className="events-grid">
-                    {events.slice(0, visibleCount).map(event => (
+                    {filteredEvents.slice(0, visibleCount).map(event => (
                         <EventCard
                             key={event.eventId}
                             event={event}
@@ -475,24 +622,24 @@ export default function EventGrid() {
                         />
                     ))}
 
-                    {events.length > 0 && (
+                    {filteredEvents.length > 0 && (
                         <div className="load-more-container">
                             <p className="pagination-info">
-                                Showing <strong>{Math.min(visibleCount, events.length)}</strong> of <strong>{events.length}</strong> markets
+                                Showing <strong>{Math.min(visibleCount, filteredEvents.length)}</strong> of <strong>{filteredEvents.length}</strong> markets
                             </p>
-                            {events.length > visibleCount && (
+                            {filteredEvents.length > visibleCount && (
                                 <button
                                     className="load-more-btn"
                                     onClick={() => setVisibleCount(prev => Math.min(prev + 36, events.length))}
                                 >
                                     Load More
-                                    <span className="count-badge">+{Math.min(36, events.length - visibleCount)}</span>
+                                    <span className="count-badge">+{Math.min(36, filteredEvents.length - visibleCount)}</span>
                                 </button>
                             )}
                         </div>
                     )}
 
-                    {events.length === 0 && !error && (
+                    {filteredEvents.length === 0 && !error && (
                         <div className="empty-state">
                             <p>No active markets in this category</p>
                         </div>
